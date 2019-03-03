@@ -24,7 +24,7 @@ Artifact::
 +
 [source,scala]
 ----
-"net.zygfryd" %% "jackshaft" % "0.1"
+"net.zygfryd" %% "jackshaft" % "0.1.1"
 ----
 
 Import::
