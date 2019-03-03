@@ -36,19 +36,18 @@ abstract class JsonParserStage[P[J1, A1, M1] <: JacksonMiddleware[J1, A1, M1], J
       }
       
       override def onPush(): Unit = {
-        try {
-          parser.parse(grab(bytesIn), ParsingMode.VALUE)(consumer)
-        }
-        catch {
-          case NonFatal(e) =>
-            promise.failure(e)
-            failStage(e)
+        if (! promise.isCompleted) {
+          try {
+            parser.parse(grab(bytesIn), ParsingMode.VALUE)(consumer)
+          }
+          catch {
+            case NonFatal(e) =>
+              promise.failure(e)
+              failStage(e)
+          }
         }
         
-        if (promise.isCompleted)
-          completeStage()
-        else
-          pull(bytesIn)
+        pull(bytesIn)
       }
       
       override def onUpstreamFinish(): Unit = {
