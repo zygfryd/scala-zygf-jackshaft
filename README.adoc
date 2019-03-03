@@ -1,0 +1,39 @@
+= jackshaft
+
+Incremental (non-blocking) parsing for Scala JSON ASTs, based on `jackson-core`.
+
+Supported ASTs: https://github.com/spray/spray-json[spray-json].
+
+Supported Scala versions: `2.11`, `2.12`, `2.13`.
+
+Supported jackson-core versions: `2.9+`.
+
+[CAUTION]
+Alpha-quality software.
+
+== Provides
+
+For each supported AST:
+
+- `akka-http` entity unmarshaller
+
+== Usage
+
+[horizontal]
+Artifact:: 
++
+[source,scala]
+----
+"net.zygfryd" %% "jackshaft" % "0.1"
+----
+
+Import::
++
+[source,scala]
+----
+import zygf.jackshaft.spray.AkkaSprayJsonSupport._
+----
+
+== TODO
+
+- everything else.

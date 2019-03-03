@@ -1,0 +1,5 @@
+sonatype.sbt
+out/
+target/
+logs/
+.idea/
