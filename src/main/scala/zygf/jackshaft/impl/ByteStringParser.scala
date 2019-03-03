@@ -21,7 +21,8 @@ class ByteStringParser[P[J1, A1, M1] <: JacksonMiddleware[J1, A1, M1], J >: Null
     while (it.hasNext) {
       val bb = it.next()
       if (bb.hasArray) {
-        feeder.feedInput(bb.array, bb.position, bb.limit)
+        val off = bb.arrayOffset
+        feeder.feedInput(bb.array, off + (bb.position: Int), off + (bb.limit: Int))
         val result = middleware.parseValue(jax)
         if (null != result)
           return result
@@ -29,13 +30,12 @@ class ByteStringParser[P[J1, A1, M1] <: JacksonMiddleware[J1, A1, M1], J >: Null
       else {
         // we can't read this ByteBuffer without copying...
         val buf = threadBuffer.get
-        var offset = 0
-        var left = (bb.limit: Int) - (bb.position: Int)
+        val copy = bb//.asReadOnlyBuffer() // let's assume for now, that if akka-http gives us the buffer, we may consume it
+        var left = bb.remaining
         while (left > 0) {
           val chunk = left min 4096
-          bb.get(buf, offset, chunk)
+          copy.get(buf, 0, chunk)
           left -= chunk
-          offset += chunk
           
           feeder.feedInput(buf, 0, chunk)
           val result = middleware.parseValue(jax)
@@ -54,7 +54,8 @@ class ByteStringParser[P[J1, A1, M1] <: JacksonMiddleware[J1, A1, M1], J >: Null
     while (it.hasNext) {
       val bb = it.next()
       if (bb.hasArray) {
-        feeder.feedInput(bb.array, bb.position, bb.limit)
+        val off = bb.arrayOffset
+        feeder.feedInput(bb.array, off + (bb.position: Int), off + (bb.limit: Int))
         if (middleware.parse(jax, mode, callback)) {
           return true
         }
@@ -62,13 +63,12 @@ class ByteStringParser[P[J1, A1, M1] <: JacksonMiddleware[J1, A1, M1], J >: Null
       else {
         // we can't read this ByteBuffer without copying...
         val buf = threadBuffer.get
-        var offset = 0
-        var left = (bb.limit: Int) - (bb.position: Int)
+        val copy = bb//.asReadOnlyBuffer() // let's assume for now, that if akka-http gives us the buffer, we may consume it
+        var left = bb.remaining
         while (left > 0) {
           val chunk = left min 4096
-          bb.get(buf, offset, chunk)
+          copy.get(buf, 0, chunk)
           left -= chunk
-          offset += chunk
           
           feeder.feedInput(buf, 0, chunk)
           if (middleware.parse(jax, mode, callback)) {
