@@ -15,6 +15,8 @@ class ByteBufferParser[J >: Null](val middleware: ParsingMiddleware[J])
   
   /** Parse a single value synchronously */
   def parseValue(input: Iterator[ByteBuffer]): J = {
+    // I don't think it's necessary to call needModeInput here, because the middleware class
+    // always keeps going until there's no more input
     while (input.hasNext) {
       val bb = input.next()
       if (bb.hasArray) {
@@ -27,11 +29,10 @@ class ByteBufferParser[J >: Null](val middleware: ParsingMiddleware[J])
       else {
         // we can't read this ByteBuffer without copying...
         val buf = threadBuffer.get
-        val copy = bb//.asReadOnlyBuffer() // let's assume for now, that if akka-http gives us the buffer, we may consume it
         var left = bb.remaining
         while (left > 0) {
           val chunk = left min 4096
-          copy.get(buf, 0, chunk)
+          bb.get(buf, 0, chunk)
           left -= chunk
           
           feeder.feedInput(buf, 0, chunk)
@@ -48,6 +49,8 @@ class ByteBufferParser[J >: Null](val middleware: ParsingMiddleware[J])
   
   /** Parse values from a stream of byte buffers asynchronously */
   def parseAsync(input: Iterator[ByteBuffer], mode: ParsingMode)(callback: Consumer[J]): Boolean = {
+    // I don't think it's necessary to call needModeInput here, because the middleware class
+    // always keeps going until there's no more input
     while (input.hasNext) {
       val bb = input.next()
       if (bb.hasArray) {
@@ -60,11 +63,10 @@ class ByteBufferParser[J >: Null](val middleware: ParsingMiddleware[J])
       else {
         // we can't read this ByteBuffer without copying...
         val buf = threadBuffer.get
-        val copy = bb//.asReadOnlyBuffer() // let's assume for now, that if akka-http gives us the buffer, we may consume it
         var left = bb.remaining
         while (left > 0) {
           val chunk = left min 4096
-          copy.get(buf, 0, chunk)
+          bb.get(buf, 0, chunk)
           left -= chunk
           
           feeder.feedInput(buf, 0, chunk)
@@ -78,9 +80,10 @@ class ByteBufferParser[J >: Null](val middleware: ParsingMiddleware[J])
     false
   }
   
-  def finishAsync(mode: ParsingMode)(callback: Consumer[J]): Boolean = {
+  def finishAsync(mode: ParsingMode)(callback: Consumer[J]): Unit = {
     feeder.endOfInput()
     middleware.parseAsync(jax, mode, callback)
+    ()
   }
 }
 

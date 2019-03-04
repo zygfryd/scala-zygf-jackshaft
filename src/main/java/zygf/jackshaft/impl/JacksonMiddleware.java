@@ -193,7 +193,7 @@ public abstract class JacksonMiddleware<J, A, M> extends ParsingMiddleware<J>
                     throw UnexpectedEndOfInputException$.MODULE$;
                 
                 this.depth = -2;
-                return null;
+                return null; // return point: final end of input
             }
             
             byte newState = 0;
@@ -201,7 +201,7 @@ public abstract class JacksonMiddleware<J, A, M> extends ParsingMiddleware<J>
             
             switch (token) {
                 case NOT_AVAILABLE:
-                    return null;
+                    return null; // return point: temporary end of input
                 
                 case START_ARRAY:
                     newState = 6;
@@ -286,11 +286,11 @@ public abstract class JacksonMiddleware<J, A, M> extends ParsingMiddleware<J>
             
             if (depth < 0) {
                 if (states[0] >= 7) {
-                    return null;
+                    return null; // return point: finished streaming an array
                 }
                 
                 reset();
-                return result;
+                return result; // return point: successfully parsed a top level value (not used when streaming as depth>=0)
             }
             
             switch (states[depth]) {
@@ -320,7 +320,7 @@ public abstract class JacksonMiddleware<J, A, M> extends ParsingMiddleware<J>
                     arrays[depth] = growArray(arrays[depth], result);
                     break;
                 default: // 7, 8 (only in parseArray, parseStream)
-                    return result;
+                    return result; // return point: parsed 1 streaming value
             }
         }
     }
