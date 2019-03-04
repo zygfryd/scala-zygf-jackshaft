@@ -15,7 +15,7 @@ import java.util.Arrays;
  * @param <A> Collection type for storing array members
  * @param <M> Collection type for storing object members
  */
-public abstract class JacksonMiddleware<J, A, M>
+public abstract class JacksonMiddleware<J, A, M> extends ParsingMiddleware<J>
 {
     public JacksonMiddleware(Class<J> jClass) {
         this(jClass, 4, 64);
@@ -176,12 +176,6 @@ public abstract class JacksonMiddleware<J, A, M>
         states = Arrays.copyOf(states, limit);
     }
     
-    /**
-     * Parse a single JSON value.
-     *
-     * @param jax A jackson parser instance
-     * @return An AST node or null if not enough input was given
-     */
     public J parseValue(final JsonParser jax) throws IOException {
         A[]      arrays = this.arrays;
         M[]      maps   = this.maps;
@@ -331,7 +325,7 @@ public abstract class JacksonMiddleware<J, A, M>
         }
     }
     
-    public boolean parse(final JsonParser jax, final ParsingMode mode, java.util.function.Consumer<J> consumer) throws IOException {
+    public boolean parse(final JsonParser jax, final ParsingMode mode, final java.util.function.Consumer<J> consumer) throws IOException {
         switch (mode) {
             case VALUE:
                 if (depth != -2) {
@@ -357,14 +351,7 @@ public abstract class JacksonMiddleware<J, A, M>
         }
     }
     
-    /**
-     * Parse a JSON array asynchronously.
-     *
-     * @param jax A jackson parser instance
-     * @param consumer A callback that gets called for each array member
-     * @return True if the array has finished parsing, false otherwise 
-     */
-    public boolean parseArray(final JsonParser jax, java.util.function.Consumer<J> consumer) throws IOException {
+    public boolean parseArray(final JsonParser jax, final java.util.function.Consumer<J> consumer) throws IOException {
         if (depth < 0) {
             if (states[0] == 7) {
                 return true; 
@@ -391,14 +378,7 @@ public abstract class JacksonMiddleware<J, A, M>
         return depth < 0;
     }
     
-    /**
-     * Parse a stream of whitespace-separated JSON values asynchronously.
-     *
-     * @param jax A jackson parser instance
-     * @param consumer A callback that gets called for each JSON value
-     * @return True if the array has finished parsing, false otherwise 
-     */
-    public void parseStream(final JsonParser jax, java.util.function.Consumer<J> consumer) throws IOException {
+    public void parseStream(final JsonParser jax, final java.util.function.Consumer<J> consumer) throws IOException {
         if (depth == -2)
             return;
         else if (depth == -1) {

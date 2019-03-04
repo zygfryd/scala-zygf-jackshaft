@@ -8,7 +8,7 @@ import akka.util.ByteString
 import com.fasterxml.jackson.core.JsonFactory
 import com.fasterxml.jackson.core.async.ByteArrayFeeder
 
-class ByteStringParser[P[J1, A1, M1] <: JacksonMiddleware[J1, A1, M1], J >: Null](val middleware: P[J, _, _])
+class ByteStringParser[J >: Null](val middleware: ParsingMiddleware[J])
 {
   import ByteStringParser._
   

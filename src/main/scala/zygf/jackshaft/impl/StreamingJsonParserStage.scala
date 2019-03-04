@@ -9,8 +9,8 @@ import akka.stream._
 import akka.stream.stage._
 import akka.util.ByteString
 
-abstract class StreamingJsonParserStage[P[J1, A1, M1] <: JacksonMiddleware[J1, A1, M1], J >: Null](val mode: ParsingMode,
-                                                                                                   val makeParser: () => ByteStringParser[P, J])
+abstract class StreamingJsonParserStage[J >: Null](val mode: ParsingMode,
+                                                   val makeParser: () => ByteStringParser[J])
   extends GraphStage[FlowShape[ByteString, J]]
 {
   private val bytesIn = Inlet[ByteString]("bytesIn")

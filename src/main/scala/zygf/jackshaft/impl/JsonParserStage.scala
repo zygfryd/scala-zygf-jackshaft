@@ -11,7 +11,7 @@ import akka.stream.stage._
 import akka.util.ByteString
 import zygf.jackshaft.exceptions.UnexpectedEndOfInputException
 
-abstract class JsonParserStage[P[J1, A1, M1] <: JacksonMiddleware[J1, A1, M1], J >: Null](val makeParser: () => ByteStringParser[P, J])
+abstract class JsonParserStage[J >: Null](val makeParser: () => ByteStringParser[J])
   extends GraphStageWithMaterializedValue[SinkShape[ByteString], Future[J]]
 {
   private val bytesIn = Inlet[ByteString]("bytesIn")
