@@ -19,7 +19,7 @@ import akka.util.ByteString
 import spray.json._
 import zygf.jackshaft.exceptions.UnexpectedEndOfInputException
 import zygf.jackshaft.impl.akka.{JsonParserStage, StreamingJsonParserStage}
-import zygf.jackshaft.impl.{ByteBufferParser, ParsingMode, StreamingJsonParserStage}
+import zygf.jackshaft.impl.{ByteBufferParser, ParsingMode}
 
 /**
   * A trait providing automatic to and from JSON marshalling/unmarshalling using an in-scope *spray-json* protocol.
