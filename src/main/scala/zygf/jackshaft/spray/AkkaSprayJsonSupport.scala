@@ -18,15 +18,16 @@ import akka.stream.scaladsl.{Keep, Source}
 import akka.util.ByteString
 import spray.json._
 import zygf.jackshaft.exceptions.UnexpectedEndOfInputException
-import zygf.jackshaft.impl.{ByteStringParser, JsonParserStage, ParsingMode, StreamingJsonParserStage}
+import zygf.jackshaft.impl.akka.{JsonParserStage, StreamingJsonParserStage}
+import zygf.jackshaft.impl.{ByteBufferParser, ParsingMode, StreamingJsonParserStage}
 
 /**
   * A trait providing automatic to and from JSON marshalling/unmarshalling using an in-scope *spray-json* protocol.
   */
 trait AkkaSprayJsonSupport {
   private def parseStrict(input: ByteString): Future[JsValue] = {
-    val parser = new ByteStringParser(new SprayMiddleware)
-    val json = parser.parseValue(input)
+    val parser = new ByteBufferParser(new SprayMiddleware)
+    val json = parser.parseValue(input.asByteBuffers.iterator)
     if (json eq null) {
       FastFuture.failed(UnexpectedEndOfInputException)
     }
@@ -65,9 +66,9 @@ trait AkkaSprayJsonSupport {
   implicit def singleJsonReadableFromEntityUnmarshallerConverter[T](reader: RootJsonReader[T]): FromEntityUnmarshaller[T] =
     singleJsonReadableFromEntityUnmarshaller(reader)
   
-  object ByteStringsToValueStage extends JsonParserStage(() => new ByteStringParser(new SprayMiddleware))
-  object ByteStringsToArrayStage extends StreamingJsonParserStage(ParsingMode.ARRAY, () => new ByteStringParser(new SprayMiddleware))
-  object ByteStringsToStreamStage extends StreamingJsonParserStage(ParsingMode.STREAM, () => new ByteStringParser(new SprayMiddleware))
+  object ByteStringsToValueStage extends JsonParserStage(() => new ByteBufferParser(new SprayMiddleware))
+  object ByteStringsToArrayStage extends StreamingJsonParserStage(ParsingMode.ARRAY, () => new ByteBufferParser(new SprayMiddleware))
+  object ByteStringsToStreamStage extends StreamingJsonParserStage(ParsingMode.STREAM, () => new ByteBufferParser(new SprayMiddleware))
   
   implicit val streamingJsArrayFromEntityUnmarshaller: FromEntityUnmarshaller[Source[JsValue, NotUsed]] = {
     Unmarshaller.withMaterializer[HttpEntity, Source[JsValue, NotUsed]] {

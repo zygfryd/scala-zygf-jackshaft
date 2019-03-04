@@ -1,25 +1,22 @@
 package zygf.jackshaft.impl
 
+import java.nio.ByteBuffer
 import java.util.function.{Consumer, Supplier}
 
-import scala.language.higherKinds
-
-import akka.util.ByteString
 import com.fasterxml.jackson.core.JsonFactory
 import com.fasterxml.jackson.core.async.ByteArrayFeeder
 
-class ByteStringParser[J >: Null](val middleware: ParsingMiddleware[J])
+class ByteBufferParser[J >: Null](val middleware: ParsingMiddleware[J])
 {
-  import ByteStringParser._
+  import ByteBufferParser._
   
   private val jax = factory.createNonBlockingByteArrayParser()
   private val feeder = jax.getNonBlockingInputFeeder().asInstanceOf[ByteArrayFeeder]
   
-  /** Parse a single value from a single ByteString */
-  def parseValue(input: ByteString): J = {
-    val it = input.asByteBuffers.iterator
-    while (it.hasNext) {
-      val bb = it.next()
+  /** Parse a single value synchronously */
+  def parseValue(input: Iterator[ByteBuffer]): J = {
+    while (input.hasNext) {
+      val bb = input.next()
       if (bb.hasArray) {
         val off = bb.arrayOffset
         feeder.feedInput(bb.array, off + (bb.position: Int), off + (bb.limit: Int))
@@ -44,19 +41,19 @@ class ByteStringParser[J >: Null](val middleware: ParsingMiddleware[J])
         }
       }
     }
-  
+    
     feeder.endOfInput()
     middleware.parseValue(jax)
   }
   
-  def parse(input: ByteString, mode: ParsingMode)(callback: Consumer[J]): Boolean = {
-    val it = input.asByteBuffers.iterator
-    while (it.hasNext) {
-      val bb = it.next()
+  /** Parse values from a stream of byte buffers asynchronously */
+  def parseAsync(input: Iterator[ByteBuffer], mode: ParsingMode)(callback: Consumer[J]): Boolean = {
+    while (input.hasNext) {
+      val bb = input.next()
       if (bb.hasArray) {
         val off = bb.arrayOffset
         feeder.feedInput(bb.array, off + (bb.position: Int), off + (bb.limit: Int))
-        if (middleware.parse(jax, mode, callback)) {
+        if (middleware.parseAsync(jax, mode, callback)) {
           return true
         }
       }
@@ -71,23 +68,23 @@ class ByteStringParser[J >: Null](val middleware: ParsingMiddleware[J])
           left -= chunk
           
           feeder.feedInput(buf, 0, chunk)
-          if (middleware.parse(jax, mode, callback)) {
+          if (middleware.parseAsync(jax, mode, callback)) {
             return true
           }
         }
       }
     }
-      
+    
     false
   }
   
-  def finish(mode: ParsingMode)(callback: Consumer[J]): Boolean = {
+  def finishAsync(mode: ParsingMode)(callback: Consumer[J]): Boolean = {
     feeder.endOfInput()
-    middleware.parse(jax, mode, callback)
+    middleware.parseAsync(jax, mode, callback)
   }
 }
 
-object ByteStringParser
+object ByteBufferParser
 {
   private val factory = (new JsonFactory)
     .enable(JsonFactory.Feature.CANONICALIZE_FIELD_NAMES)

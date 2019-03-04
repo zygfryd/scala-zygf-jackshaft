@@ -1,4 +1,4 @@
-package zygf.jackshaft.impl
+package zygf.jackshaft.impl.akka
 
 import java.util.function.Consumer
 
@@ -10,8 +10,9 @@ import akka.stream._
 import akka.stream.stage._
 import akka.util.ByteString
 import zygf.jackshaft.exceptions.UnexpectedEndOfInputException
+import zygf.jackshaft.impl.{ByteBufferParser, ParsingMode}
 
-abstract class JsonParserStage[J >: Null](val makeParser: () => ByteStringParser[J])
+abstract class JsonParserStage[J >: Null](val makeParser: () => ByteBufferParser[J])
   extends GraphStageWithMaterializedValue[SinkShape[ByteString], Future[J]]
 {
   private val bytesIn = Inlet[ByteString]("bytesIn")
@@ -38,7 +39,7 @@ abstract class JsonParserStage[J >: Null](val makeParser: () => ByteStringParser
       override def onPush(): Unit = {
         if (! promise.isCompleted) {
           try {
-            parser.parse(grab(bytesIn), ParsingMode.VALUE)(consumer)
+            parser.parseAsync(grab(bytesIn).asByteBuffers.iterator, ParsingMode.VALUE)(consumer)
           }
           catch {
             case NonFatal(e) =>
@@ -52,7 +53,7 @@ abstract class JsonParserStage[J >: Null](val makeParser: () => ByteStringParser
       
       override def onUpstreamFinish(): Unit = {
         try {
-          parser.finish(ParsingMode.VALUE)(consumer)
+          parser.finishAsync(ParsingMode.VALUE)(consumer)
         }
         catch {
           case NonFatal(e) =>

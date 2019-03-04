@@ -325,7 +325,7 @@ public abstract class JacksonMiddleware<J, A, M> extends ParsingMiddleware<J>
         }
     }
     
-    public boolean parse(final JsonParser jax, final ParsingMode mode, final java.util.function.Consumer<J> consumer) throws IOException {
+    public boolean parseAsync(final JsonParser jax, final ParsingMode mode, final java.util.function.Consumer<J> consumer) throws IOException {
         switch (mode) {
             case VALUE:
                 if (depth != -2) {

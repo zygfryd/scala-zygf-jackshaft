@@ -14,7 +14,7 @@ public abstract class ParsingMiddleware<J>
      * @param consumer A callback that gets called for each JSON value
      * @return True if the array has finished parsing, false otherwise 
      */
-    public abstract boolean parse(JsonParser jax, ParsingMode mode, java.util.function.Consumer<J> consumer) throws IOException;
+    public abstract boolean parseAsync(JsonParser jax, ParsingMode mode, java.util.function.Consumer<J> consumer) throws IOException;
     
     /**
      * Parse a single JSON value.

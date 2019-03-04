@@ -1,4 +1,4 @@
-package zygf.jackshaft.impl
+package zygf.jackshaft.impl.akka
 
 import java.util.function.Consumer
 
@@ -8,9 +8,10 @@ import scala.util.control.NonFatal
 import akka.stream._
 import akka.stream.stage._
 import akka.util.ByteString
+import zygf.jackshaft.impl.{ByteBufferParser, ParsingMode}
 
 abstract class StreamingJsonParserStage[J >: Null](val mode: ParsingMode,
-                                                   val makeParser: () => ByteStringParser[J])
+                                                   val makeParser: () => ByteBufferParser[J])
   extends GraphStage[FlowShape[ByteString, J]]
 {
   private val bytesIn = Inlet[ByteString]("bytesIn")
@@ -29,7 +30,7 @@ abstract class StreamingJsonParserStage[J >: Null](val mode: ParsingMode,
     
     override def onPush(): Unit = {
       try {
-        parser.parse(grab(bytesIn), mode)(consumer)
+        parser.parseAsync(grab(bytesIn).asByteBuffers.iterator, mode)(consumer)
       }
       catch {
         case NonFatal(e) =>
@@ -56,7 +57,7 @@ abstract class StreamingJsonParserStage[J >: Null](val mode: ParsingMode,
   
     override def onUpstreamFinish(): Unit = {
       try {
-        parser.finish(mode)(consumer)
+        parser.finishAsync(mode)(consumer)
       }
       catch {
         case NonFatal(e) =>
