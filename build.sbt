@@ -6,7 +6,7 @@ organization := "net.zygfryd"
 organizationName := "zygfryd's projects"
 organizationHomepage := Some(url("https://zygfryd.net/"))
 
-description := "A factory macro for anonymous final static lazy variables, for Scala."
+description := "Incremental (non-blocking) parsing for Scala JSON ASTs, based on jackson-core."
 
 licenses := List("Apache 2" -> new URL("http://www.apache.org/licenses/LICENSE-2.0.txt"))
 
