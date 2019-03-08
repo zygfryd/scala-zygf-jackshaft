@@ -82,6 +82,14 @@ final class ByteBufferOutputStream(bufferSize: Int = 512) extends OutputStream
     }
   }
   
+  def maybeFlush(): Unit = {
+    if ((current ne null) && current.backend.remaining < (current.backend.capacity / 8)) {
+      buffers.addLast(current)
+      ready.addLast(current.send())
+      current = null
+    }
+  }
+  
   override def close(): Unit = {
     if ((current ne null) && (current.backend.position: Int) > 0) {
       ready.addLast(current.send())
