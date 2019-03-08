@@ -18,13 +18,14 @@ import akka.stream.scaladsl.{Keep, Source}
 import akka.util.ByteString
 import spray.json._
 import zygf.jackshaft.exceptions.UnexpectedEndOfInputException
-import zygf.jackshaft.impl.akka.{JsonParserStage, StreamingJsonParserStage}
+import zygf.jackshaft.impl.akka.{AkkaSupport, JsonParserStage, StreamingJsonParserStage}
 import zygf.jackshaft.impl.{ByteBufferParser, ParsingMode}
 
 /**
   * A trait providing automatic to and from JSON marshalling/unmarshalling using an in-scope *spray-json* protocol.
   */
-trait AkkaSprayJsonSupport {
+abstract class AkkaSprayJsonSupport extends AkkaSupport(SprayPrinter)
+{
   private def parseStrict(input: ByteString): Future[JsValue] = {
     val parser = new ByteBufferParser(new SprayMiddleware)
     val json = parser.parseValue(input.asByteBuffers.iterator)
@@ -83,16 +84,10 @@ trait AkkaSprayJsonSupport {
     }
   }
   
-  // TODO: redo writing?
+  implicit def sprayJsValueMarshaller = marshallerImpl 
   
-  //#sprayJsonMarshallerConverter
-  implicit def sprayJsonMarshallerConverter[T](writer: RootJsonWriter[T])(implicit printer: JsonPrinter = CompactPrinter): ToEntityMarshaller[T] =
-    sprayJsonMarshaller[T](writer, printer)
-  //#sprayJsonMarshallerConverter
-  implicit def sprayJsonMarshaller[T](implicit writer: RootJsonWriter[T], printer: JsonPrinter = CompactPrinter): ToEntityMarshaller[T] =
-    sprayJsValueMarshaller compose writer.write
-  implicit def sprayJsValueMarshaller(implicit printer: JsonPrinter = CompactPrinter): ToEntityMarshaller[JsValue] =
-    Marshaller.StringMarshaller.wrap(MediaTypes.`application/json`)(printer)
+  implicit def sprayJsonMarshaller[T](implicit writer: RootJsonWriter[T]): ToEntityMarshaller[T] =
+    marshallerImpl compose writer.write
 }
 
 object AkkaSprayJsonSupport extends AkkaSprayJsonSupport
