@@ -22,6 +22,7 @@ class JsonPrinter[J](private val middleware: PrintingMiddleware[J],
   private var depth = 0
   private var strValue: String = null
   private var strOffset: Int = 0
+  private var memberValue: (String, J) = null
   
   private var _errors = Nil: List[String]
   
@@ -39,14 +40,15 @@ class JsonPrinter[J](private val middleware: PrintingMiddleware[J],
   }
   
   final def continue(): Boolean = {
-    val at = depth - 1
+    val oldDepth = depth
+    val at = oldDepth - 1
     if (at < 0)
       return true
     
     instructions(at) match {
       case 0 =>
         val s = strValue
-        var until = strOffset + 1024
+        var until = strOffset + segmentSize
         if (until >= s.length) {
           until = s.length
           emitStringContents(s, strOffset, until)
@@ -54,10 +56,17 @@ class JsonPrinter[J](private val middleware: PrintingMiddleware[J],
           out.write('"')
           depth -= 1
         }
-        else
+        else {
           emitStringContents(s, strOffset, until)
+          strOffset = until
+        }
         
-      case insn @ (1 | 2) =>
+      case insn @ (1 | 3) =>
+        // 1 - first object member
+        // 2 - first object member, key done
+        // 3 - next object member
+        // 4 - next object member, key done
+        
         val it = objectIterators(at)
         if (it.hasNext) {
           val pair = it.next()
@@ -65,20 +74,26 @@ class JsonPrinter[J](private val middleware: PrintingMiddleware[J],
           path(at) = pair._1
           
           if (pair._1 ne null) {
-            if (insn == 2)
+            if (insn == 3)
               emitObjectSep()
-            else
-              instructions(at) = 2
             
-            emitWholeString(pair._1)
-            emitFieldSep()
-            middleware.emit(pair._2, this)
+            printString(pair._1)
+            
+            if (depth > oldDepth) {
+              instructions(at) = (insn + 1).toByte
+              memberValue = pair
+            }
+            else {
+              emitFieldSep()
+              middleware.emit(pair._2, this)
+              instructions(at) = 3
+            }
           }
           else {
             reportError("null object key")
           }
   
-          if (depth == at + 1 /* nothing new pushed */ && !it.hasNext) {
+          if (depth == oldDepth /* nothing new pushed */ && !it.hasNext) {
             emitEndObject()
             objectIterators(at) = null
             depth -= 1
@@ -89,22 +104,28 @@ class JsonPrinter[J](private val middleware: PrintingMiddleware[J],
           objectIterators(at) = null
           depth -= 1
         }
+
+      case insn @ (2 | 4) =>
+        // object field continuation
+        emitFieldSep()
+        middleware.emit(memberValue._2, this)
+        instructions(at) = 3
         
-      case insn @ (3 | 4) =>
+      case insn @ (-1 | -2) =>
         val it = arrayIterators(at)
         if (it.hasNext) {
           val elem = it.next()
           
           path(at) = path(at).asInstanceOf[Integer] + 1
           
-          if (insn == 4)
+          if (insn == -2)
             emitArraySep()
           else
-            instructions(at) = 4
+            instructions(at) = -2
           
           middleware.emit(elem, this)
           
-          if (depth == at + 1 /* nothing new pushed */ && !it.hasNext) {
+          if (depth == oldDepth /* nothing new pushed */ && !it.hasNext) {
             emitEndArray()
             arrayIterators(at) = null
             depth -= 1
@@ -251,21 +272,21 @@ class JsonPrinter[J](private val middleware: PrintingMiddleware[J],
   }
   
   final def printString(value: String): Unit = {
-    if (value.length <= 1024) {
+    if (value.length <= segmentSize) {
       emitWholeString(value)
     }
     else {
       out.write('"')
       
       val depth = this.depth
-  
+      
       if (depth >= instructions.length)
         grow()
       
       instructions(depth) = 0
       strValue = value
       strOffset = 0
-  
+      
       this.depth = depth + 1
     }
   }
@@ -293,7 +314,7 @@ class JsonPrinter[J](private val middleware: PrintingMiddleware[J],
     if (depth >= instructions.length)
       grow()
     
-    instructions(depth) = 3
+    instructions(depth) = -1
     path(depth) = -1
     
     iterator match {
@@ -380,6 +401,7 @@ class JsonPrinter[J](private val middleware: PrintingMiddleware[J],
 
 object JsonPrinter
 {
+  private val segmentSize = 512
   private val NULL  = Array[Byte]('n', 'u', 'l', 'l')
   private val TRUE  = Array[Byte]('t', 'r', 'u', 'e')
   private val FALSE = Array[Byte]('f', 'a', 'l', 's', 'e')
