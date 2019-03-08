@@ -16,12 +16,6 @@ final class ByteBufferOutputStream(bufferSize: Int = 512) extends OutputStream
   def waiting = ready.size
   def poll(): ByteBuffer = ready.pollFirst()
   
-  private val arrayOfOne = new Array[Byte](1)
-  override def write(b: Int) = {
-    arrayOfOne(0) = b.toByte
-    write(arrayOfOne, 0, 1)
-  }
-  
   private def nextBuffer(): Buffer = {
     val first = buffers.peekFirst()
     if ((first ne null) && first.reusable) {
@@ -32,6 +26,28 @@ final class ByteBufferOutputStream(bufferSize: Int = 512) extends OutputStream
     else {
       nextSize = (nextSize << 1) min maxSize
       new Buffer(nextSize)
+    }
+  }
+  
+  override def write(b: Int) = {
+    var cur = current
+    
+    try {
+      if (cur eq null)
+        cur = nextBuffer()
+    
+      val target = cur.backend
+    
+      target.put(b.toByte)
+    
+      if (!target.hasRemaining) {
+        buffers.addLast(cur)
+        ready.addLast(cur.send())
+        cur = null
+      }
+    }
+    finally {
+      current = cur
     }
   }
   

@@ -14,10 +14,10 @@ import akka.http.scaladsl.unmarshalling.Unmarshal
 import akka.stream.ActorMaterializer
 import akka.stream.scaladsl.Source
 import akka.util.ByteString
-import com.fasterxml.jackson.core.{JsonFactory, JsonGenerator}
+import com.fasterxml.jackson.core.JsonFactory
 import com.fasterxml.jackson.core.async.ByteArrayFeeder
 import spray.json._
-import zygf.jackshaft.spray.{SprayEmitter, SprayMiddleware}
+import zygf.jackshaft.spray.{SprayPrinter, SprayMiddleware}
 
 class SprayTests extends org.scalatest.FunSuite
 {
@@ -104,20 +104,19 @@ class SprayTests extends org.scalatest.FunSuite
     assert(result == JsArray(Vector(JsNumber(1), JsTrue, JsFalse)))
   }
   
-  test("emitter") {
+  test("printer") {
     import spray.json._
     
-    val input = "[1,{\"key\":[false,\"str\"]}]"
+    val input = "[1,{\"key\":[false,1.1,\"str\\u1234\",[null],[],{}]}]"
     val tree = input.parseJson
   
     {
       val fact = (new JsonFactory)
       val out = new ByteArrayOutputStream()
-      val gen = fact.createGenerator(out)
-      val spray = new SprayEmitter(tree)
+      val print = new zygf.jackshaft.impl.JsonPrinter(SprayPrinter, out)
       
-      while (!spray.emit(gen)) {}
-      gen.close()
+      print.start(tree)
+      while (!print.continue()) {}
       
       assert(input == new String(out.toByteArray))
     }
