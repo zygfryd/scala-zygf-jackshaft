@@ -4,7 +4,7 @@ import com.fasterxml.jackson.core.JsonParser;
 
 import java.io.IOException;
 
-public abstract class ParsingMiddleware<J>
+public abstract class JacksonWrapper<J>
 {
     /**
      * Dispatch to another parsing method dynamically.

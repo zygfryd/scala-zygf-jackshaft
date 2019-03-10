@@ -42,7 +42,13 @@ scalacOptions ++= Seq("-sourcepath", (baseDirectory in ThisBuild).value.getAbsol
                       "-Xlint:missing-interpolator",
                       "-Xlint:option-implicit",
                       "-Xlint:poly-implicit-overload",
-                      "-Xlint:type-parameter-shadow")
+                      "-Xlint:type-parameter-shadow") ++ {
+  if (scalaBinaryVersion.value == "2.11")
+    Seq()
+  else
+    Seq("-opt:l:inline",
+        "-opt-inline-from:zygf.**")
+}
 
 javacOptions ++= Seq("-source", "8",
                      "-target", "8")

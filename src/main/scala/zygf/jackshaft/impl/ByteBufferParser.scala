@@ -1,17 +1,16 @@
 package zygf.jackshaft.impl
 
 import java.nio.ByteBuffer
-import java.util.function.{Consumer, Supplier}
+import java.util.function.Consumer
 
-import com.fasterxml.jackson.core.JsonFactory
 import com.fasterxml.jackson.core.async.ByteArrayFeeder
+import zygf.jackshaft.conf.JackshaftConfig
 
-class ByteBufferParser[J >: Null](val middleware: ParsingMiddleware[J])
+final class ByteBufferParser[J](val parsing: ParsingMiddleware[J])(implicit config: JackshaftConfig = JackshaftConfig.default)
 {
-  import ByteBufferParser._
-  
-  private val jax = factory.createNonBlockingByteArrayParser()
+  private val jax = config.jacksonFactory.createNonBlockingByteArrayParser()
   private val feeder = jax.getNonBlockingInputFeeder().asInstanceOf[ByteArrayFeeder]
+  private val wrapper = parsing.createJacksonWrapper()
   
   /** Parse a single value synchronously */
   def parseValue(input: Iterator[ByteBuffer]): J = {
@@ -22,29 +21,35 @@ class ByteBufferParser[J >: Null](val middleware: ParsingMiddleware[J])
       if (bb.hasArray) {
         val off = bb.arrayOffset
         feeder.feedInput(bb.array, off + (bb.position: Int), off + (bb.limit: Int))
-        val result = middleware.parseValue(jax)
+        val result = wrapper.parseValue(jax)
         if (null != result)
           return result
       }
       else {
         // we can't read this ByteBuffer without copying...
-        val buf = threadBuffer.get
-        var left = bb.remaining
-        while (left > 0) {
-          val chunk = left min 4096
-          bb.get(buf, 0, chunk)
-          left -= chunk
-          
-          feeder.feedInput(buf, 0, chunk)
-          val result = middleware.parseValue(jax)
-          if (null != result)
-            return result
+        val bufferProvider = config.tempBufferProvider
+        val buf = bufferProvider.acquire()
+        try {
+          var left = bb.remaining
+          while (left > 0) {
+            val chunk = left min 4096
+            bb.get(buf, 0, chunk)
+            left -= chunk
+    
+            feeder.feedInput(buf, 0, chunk)
+            val result = wrapper.parseValue(jax)
+            if (null != result)
+              return result
+          }
+        }
+        finally {
+          bufferProvider.release(buf)
         }
       }
     }
     
     feeder.endOfInput()
-    middleware.parseValue(jax)
+    wrapper.parseValue(jax)
   }
   
   /** Parse values from a stream of byte buffers asynchronously */
@@ -56,23 +61,29 @@ class ByteBufferParser[J >: Null](val middleware: ParsingMiddleware[J])
       if (bb.hasArray) {
         val off = bb.arrayOffset
         feeder.feedInput(bb.array, off + (bb.position: Int), off + (bb.limit: Int))
-        if (middleware.parseAsync(jax, mode, callback)) {
+        if (wrapper.parseAsync(jax, mode, callback)) {
           return true
         }
       }
       else {
         // we can't read this ByteBuffer without copying...
-        val buf = threadBuffer.get
-        var left = bb.remaining
-        while (left > 0) {
-          val chunk = left min 4096
-          bb.get(buf, 0, chunk)
-          left -= chunk
-          
-          feeder.feedInput(buf, 0, chunk)
-          if (middleware.parseAsync(jax, mode, callback)) {
-            return true
+        val bufferProvider = config.tempBufferProvider
+        val buf = bufferProvider.acquire()
+        try {
+          var left = bb.remaining
+          while (left > 0) {
+            val chunk = left min 4096
+            bb.get(buf, 0, chunk)
+            left -= chunk
+    
+            feeder.feedInput(buf, 0, chunk)
+            if (wrapper.parseAsync(jax, mode, callback)) {
+              return true
+            }
           }
+        }
+        finally {
+          bufferProvider.release(buf)
         }
       }
     }
@@ -82,20 +93,7 @@ class ByteBufferParser[J >: Null](val middleware: ParsingMiddleware[J])
   
   def finishAsync(mode: ParsingMode)(callback: Consumer[J]): Unit = {
     feeder.endOfInput()
-    middleware.parseAsync(jax, mode, callback)
+    wrapper.parseAsync(jax, mode, callback)
     ()
-  }
-}
-
-object ByteBufferParser
-{
-  private val factory = (new JsonFactory)
-    .enable(JsonFactory.Feature.CANONICALIZE_FIELD_NAMES)
-    .disable(JsonFactory.Feature.INTERN_FIELD_NAMES)
-  
-  private val threadBuffer = ThreadLocal.withInitial[Array[Byte]] {
-    new Supplier[Array[Byte]] {
-      override def get() = new Array[Byte](4096)
-    }
   }
 }

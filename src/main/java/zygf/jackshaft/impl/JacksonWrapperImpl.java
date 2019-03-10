@@ -15,14 +15,15 @@ import java.util.Arrays;
  * @param <A> Collection type for storing array members
  * @param <M> Collection type for storing object members
  */
-public abstract class JacksonMiddleware<J, A, M> extends ParsingMiddleware<J>
+public class JacksonWrapperImpl<J, A, M> extends JacksonWrapper<J>
 {
-    public JacksonMiddleware(Class<J> jClass) {
-        this(jClass, 4, 64);
+    public JacksonWrapperImpl(ParsingMiddlewareImpl<J, A, M> middleware, Class<J> jClass) {
+        this(middleware, jClass, 4, 64);
     }
     
-    public JacksonMiddleware(Class<J> jClass, int initialDepth, int maxDepth) {
+    public JacksonWrapperImpl(ParsingMiddlewareImpl<J, A, M> middleware, Class<J> jClass, int initialDepth, int maxDepth) {
         this.maxDepth = maxDepth;
+        this.middleware = middleware;
         
         maps = (M[]) new Object[initialDepth]; // this is private, can be "erased"
         arrays = (A[]) new Object[initialDepth]; // this is private, can be "erased"
@@ -32,6 +33,7 @@ public abstract class JacksonMiddleware<J, A, M> extends ParsingMiddleware<J>
         depth = -1;
     }
     
+    private final ParsingMiddlewareImpl<J, A, M> middleware;
     private final int maxDepth;
     
     // PARSING STATE
@@ -75,78 +77,6 @@ public abstract class JacksonMiddleware<J, A, M> extends ParsingMiddleware<J>
      */
     private int depth;
     
-    // CALLBACKS, with some special cases for improved performance
-    
-    /**
-     * Output an AST null node
-     */
-    public abstract J jNull();
-    
-    /**
-     * Output an AST true node
-     */
-    public abstract J jTrue();
-    
-    /**
-     * Output an AST false node
-     */
-    public abstract J jFalse();
-    
-    /**
-     * Output a number AST node
-     */
-    public abstract J numberToJNumber(Number num);
-    
-    /**
-     * Output a string AST node
-     */
-    public abstract J stringToJString(String text);
-    
-    /**
-     * Output an empty array AST node
-     */
-    public abstract J emptyJArray();
-    
-    /**
-     * Output an empty object AST node
-     */
-    public abstract J emptyJObject();
-    
-    /**
-     * Output a small object AST node with 1 to 4 members
-     */
-    protected abstract J smallJObject(String[] keys, J[] values, int at, int count);
-    
-    /**
-     * Create an empty collection for storing a bigger object's members
-     */
-    protected abstract M emptyMap();
-    
-    /**
-     * Add a member to a collection returned by `emptyMap()`
-     */
-    protected abstract M growMap(M map, String key, J value);
-    
-    /**
-     * Create an object AST node from a collection returned by `emptyMap()`
-     */
-    protected abstract J mapToJObject(M map);
-    
-    /**
-     * Create an empty collection for storing array members
-     */
-    protected abstract A emptyArray();
-    
-    /**
-     * Add a member to a collection returned by `emptyArray()`
-     */
-    protected abstract A growArray(A array, J value);
-    
-    /**
-     * Create an array AST node from a collection returned by `emptyArray()`
-     */
-    protected abstract J arrayToJArray(A array);
-    
     /**
      * Reset this instance's state for parsing a fresh JSON stream
      */
@@ -184,6 +114,8 @@ public abstract class JacksonMiddleware<J, A, M> extends ParsingMiddleware<J>
         J[]      vals   = this.vals;
         int      depth  = this.depth;
         int      limit  = this.arrays.length;
+        
+        final ParsingMiddlewareImpl<J, A, M> middleware = this.middleware;
         
         while (true) {
             final JsonToken token = jax.nextToken();
@@ -224,9 +156,9 @@ public abstract class JacksonMiddleware<J, A, M> extends ParsingMiddleware<J>
                 
                 case END_ARRAY:
                     if (arrays[depth] == null)
-                        result = emptyJArray();
+                        result = middleware.buildArray();
                     else {
-                        result = arrayToJArray(arrays[depth]);
+                        result = middleware.buildArray(arrays[depth]);
                         arrays[depth] = null;
                     }
                     depth--;
@@ -243,16 +175,16 @@ public abstract class JacksonMiddleware<J, A, M> extends ParsingMiddleware<J>
                     int at = depth * 4;
                     switch (states[depth]) {
                         case 0:
-                            result = emptyJObject();
+                            result = middleware.buildObject();
                             break;
                         case 1:
                         case 2:
                         case 3:
                         case 4:
-                            result = smallJObject(keys, vals, at, states[depth]);
+                            result = middleware.buildObject(keys, vals, at, states[depth]);
                             break;
                         default:
-                            result = mapToJObject(maps[depth]);
+                            result = middleware.buildObject(maps[depth]);
                     }
                     maps[depth] = null;
                     depth--;
@@ -261,27 +193,27 @@ public abstract class JacksonMiddleware<J, A, M> extends ParsingMiddleware<J>
                 }
                 
                 case VALUE_NULL:
-                    result = jNull();
+                    result = middleware.buildNull();
                     break;
                 
                 case VALUE_TRUE:
-                    result = jTrue();
+                    result = middleware.buildTrue();
                     break;
                 
                 case VALUE_FALSE:
-                    result = jFalse();
+                    result = middleware.buildFalse();
                     break;
                 
                 case VALUE_NUMBER_INT:
                 case VALUE_NUMBER_FLOAT:
-                    result = numberToJNumber(jax.getNumberValue());
+                    result = middleware.buildNumber(jax.getNumberValue());
                     break;
                 
                 case VALUE_STRING:
                     if (jax.getTextLength() == 0)
-                        result = stringToJString("");
+                        result = middleware.buildString("");
                     else
-                        result = stringToJString(jax.getText());
+                        result = middleware.buildString(jax.getText());
             }
             
             if (depth < 0) {
@@ -303,21 +235,21 @@ public abstract class JacksonMiddleware<J, A, M> extends ParsingMiddleware<J>
                     break;
                 case 4: {
                     int at = depth * 4;
-                    maps[depth] = growMap(growMap(growMap(growMap(emptyMap(),
-                                                                  keys[at], vals[at++]),
-                                                          keys[at], vals[at++]),
-                                                  keys[at], vals[at++]),
-                                          keys[at], vals[at]);
+                    maps[depth] = middleware.growMap(middleware.growMap(middleware.growMap(middleware.growMap(middleware.emptyMap(),
+                                                                                                              keys[at], vals[at++]),
+                                                                                           keys[at], vals[at++]),
+                                                                        keys[at], vals[at++]),
+                                                     keys[at], vals[at]);
                     states[depth] = 5;
                     //fallthrough
                 }
                 case 5:
-                    maps[depth] = growMap(maps[depth], jax.getCurrentName(), result);
+                    maps[depth] = middleware.growMap(maps[depth], jax.getCurrentName(), result);
                     break;
                 case 6:
                     if (arrays[depth] == null)
-                        arrays[depth] = emptyArray();
-                    arrays[depth] = growArray(arrays[depth], result);
+                        arrays[depth] = middleware.emptyArray();
+                    arrays[depth] = middleware.growArray(arrays[depth], result);
                     break;
                 default: // 7, 8 (only in parseArray, parseStream)
                     return result; // return point: parsed 1 streaming value

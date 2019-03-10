@@ -4,6 +4,8 @@
 
 package zygf.tests
 
+import scala.concurrent.duration.Duration
+
 import akka.actor.ActorSystem
 import akka.http.scaladsl.marshalling.Marshal
 import akka.http.scaladsl.model.MessageEntity
@@ -24,7 +26,7 @@ class SprayJsonSupportSpec extends WordSpec with Matchers with ScalaFutures {
   implicit val mat = ActorMaterializer()
   import sys.dispatcher
   
-  val TestString = "Contains all UTF-8 characters: 2-byte: £, 3-byte: ﾖ, 4-byte: 😁, 4-byte as a literal surrogate pair: \uD83D\uDE01"
+  val TestString = Seq.fill(100)("Contains all UTF-8 characters: 2-byte: £, 3-byte: ﾖ, 4-byte: 😁, 4-byte as a literal surrogate pair: \uD83D\uDE01").mkString("; ")
   
   "SprayJsonSupport" should {
     "allow round trip via Marshal / Unmarshal case class <-> HttpEntity" in {

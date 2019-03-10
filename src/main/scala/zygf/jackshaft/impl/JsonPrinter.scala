@@ -1,18 +1,18 @@
 package zygf.jackshaft.impl
 
-import java.io.OutputStream
-
+import scala.annotation.switch
 import scala.collection.AbstractIterator
 
 import com.fasterxml.jackson.core.io.NumberOutput
+import zygf.jackshaft.conf.StreamingMode
 
-class JsonPrinter[J](private val middleware: PrintingMiddleware[J],
-                     private val out: OutputStream,
-                     bufferSize: Int = 128)
+final class JsonPrinter[J](private val middleware: PrintingMiddleware[J])
 {
   import JsonPrinter._
   
-  private val buffer = new Array[Byte](bufferSize)
+  private val buffer = new Array[Byte](4096) // TODO: refactor member into argument, so we can use a thread local buffer
+  private val watermark = buffer.length - 32
+  private var written = 0
   
   private var instructions = new Array[Byte](8)
   private var arrayIterators = new Array[AbstractIterator[J]](8)
@@ -26,6 +26,10 @@ class JsonPrinter[J](private val middleware: PrintingMiddleware[J],
   
   private var _errors = Nil: List[String]
   
+  def isEmpty = written == 0
+  
+  def nonEmpty = written > 0
+  
   private def grow(): Unit = {
     val l = instructions.length << 1
     instructions = java.util.Arrays.copyOf(instructions, l)
@@ -34,33 +38,75 @@ class JsonPrinter[J](private val middleware: PrintingMiddleware[J],
     path = java.util.Arrays.copyOf(path.asInstanceOf[Array[AnyRef]], l).asInstanceOf[Array[Any]]
   }
   
-  final def start(value: J): Unit = {
+  def drain(into: Array[Byte], offset: Int): Int = {
+    val w = written
+    System.arraycopy(buffer, 0, into, offset, w)
+    written = 0
+    w
+  }
+  
+  def drain(into: java.lang.StringBuilder): Int = {
+    val w = written
+    var i = 0
+    while (i < w) {
+      into.append(buffer(i).toChar)
+      i += 1
+    }
+    written = 0
+    w
+  }
+  
+  def drain(into: scala.StringBuilder): Int = {
+    val w = written
+    var i = 0
+    while (i < w) {
+      into.append(buffer(i).toChar)
+      i += 1
+    }
+    written = 0
+    w
+  }
+  
+  def drainAs[B >: Null](force: Boolean = false)(implicit B: WrapsByteArray[B]): B = {
+    if (written > 0 && (force || written >= watermark)) {
+      val w = written
+      written = 0
+      B.copy(buffer, 0, w)
+    }
+    else
+      null
+  }
+  
+  def start(value: J): Unit = {
     require(depth == 0)
     middleware.emit(value, this)
   }
   
-  final def continue(): Boolean = {
+  def continue(): Boolean = {
     val oldDepth = depth
     val at = oldDepth - 1
     if (at < 0)
       return true
     
-    instructions(at) match {
+    if (written >= watermark)
+      return false
+    
+    (instructions(at): @switch) match {
       case 0 =>
         val s = strValue
-        var until = strOffset + segmentSize
-        if (until >= s.length) {
-          until = s.length
-          emitStringContents(s, strOffset, until)
+        val L = s.length
+        val n = emitStringContents(s, strOffset, L)
+        if (n == L) {
           strValue = null
-          out.write('"')
+          buffer(written) = '"'
+          written += 1
           depth -= 1
+          return false
         }
         else {
-          emitStringContents(s, strOffset, until)
-          strOffset = until
+          strOffset = n
         }
-        
+      
       case insn @ (1 | 3) =>
         // 1 - first object member
         // 2 - first object member, key done
@@ -92,7 +138,7 @@ class JsonPrinter[J](private val middleware: PrintingMiddleware[J],
           else {
             reportError("null object key")
           }
-  
+          
           if (depth == oldDepth /* nothing new pushed */ && !it.hasNext) {
             emitEndObject()
             objectIterators(at) = null
@@ -104,13 +150,13 @@ class JsonPrinter[J](private val middleware: PrintingMiddleware[J],
           objectIterators(at) = null
           depth -= 1
         }
-
+      
       case insn @ (2 | 4) =>
         // object field continuation
         emitFieldSep()
         middleware.emit(memberValue._2, this)
         instructions(at) = 3
-        
+      
       case insn @ (-1 | -2) =>
         val it = arrayIterators(at)
         if (it.hasNext) {
@@ -141,170 +187,235 @@ class JsonPrinter[J](private val middleware: PrintingMiddleware[J],
     false
   }
   
-  private def emitStartObject(): Unit = out.write('{')
-  
-  private def emitFieldSep(): Unit = out.write(':')
-  
-  private def emitObjectSep(): Unit = out.write(',')
-  
-  private def emitEndObject(): Unit = out.write('}')
-  
-  private def emitStartArray(): Unit = out.write('[')
-  
-  private def emitArraySep(): Unit = out.write(',')
-  
-  private def emitEndArray(): Unit = out.write(']')
-  
-  private def emitWholeString(s: String): Unit = {
-    out.write('"')
-    emitStringContents(s, 0, s.length)
-    out.write('"')
+  private def emitStartObject(): Unit = {
+    buffer(written) = '{'
+    written += 1
   }
   
-  private def emitStringContents(s: String, offset: Int, until: Int): Unit = {
-    val buffer = this.buffer
-    val L = buffer.length - 6
-    var i = offset
-    var b = 0
-    while (i < until) {
-      val c = s.charAt(i)
-      
-      if (c >= 32 && c <= 126) {
+  private def emitFieldSep(): Unit = {
+    buffer(written) = ':'
+    written += 1
+  }
+  
+  private def emitObjectSep(): Unit = {
+    buffer(written) = ','
+    written += 1
+  }
+  
+  private def emitEndObject(): Unit = {
+    buffer(written) = '}'
+    written += 1
+  }
+  
+  private[impl] def emitStartArray(): Unit = {
+    buffer(written) = '['
+    written += 1
+  }
+  
+  private def emitArraySep(): Unit = {
+    buffer(written) = ','
+    written += 1
+  }
+  
+  private def emitEndArray(): Unit = {
+    buffer(written) = ']'
+    written += 1
+  }
+  
+  private def emitQuote(): Unit = {
+    buffer(written) = '"'
+    written += 1
+  }
+  
+  @inline private def emitStringSwitch(c: Char, buffer: Array[Byte], b0: Int): Int = {
+    var b = b0
+    
+    (c: @switch) match {
+      case c @ (' ' | '!' | '#' | '$' | '%' | '&' | '\'' | '(' | ')' | '*' | '+' | ',' | '-' | '.' | '/' | '0' | '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9' | ':' | ';' | '<' | '=' | '>' | '?' | '@' | 'A' | 'B' | 'C' | 'D' | 'E' | 'F' | 'G' | 'H' | 'I' | 'J' | 'K' | 'L' | 'M' | 'N' | 'O' | 'P' | 'Q' | 'R' | 'S' | 'T' | 'U' | 'V' | 'W' | 'X' | 'Y' | 'Z' | '[' | ']' | '^' | '_' | '`' | 'a' | 'b' | 'c' | 'd' | 'e' | 'f' | 'g' | 'h' | 'i' | 'j' | 'k' | 'l' | 'm' | 'n' | 'o' | 'p' | 'q' | 'r' | 's' | 't' | 'u' | 'v' | 'w' | 'x' | 'y' | 'z' | '{' | '|' | '}' | '~') =>
         buffer(b) = c.toByte
         b += 1
-      }
-      else {
-        c match {
-          case '"' =>
-            buffer(b) = '\\'
-            b += 1
-            buffer(b) = '"'
-            b += 1
-          case '\\' =>
-            buffer(b) = '\\'
-            b += 1
-            buffer(b) = '\\'
-            b += 1
-          case '\b' =>
-            buffer(b) = '\\'
-            b += 1
-            buffer(b) = 'b'
-            b += 1
-          case '\f' =>
-            buffer(b) = '\\'
-            b += 1
-            buffer(b) = 'f'
-            b += 1
-          case '\n' =>
-            buffer(b) = '\\'
-            b += 1
-            buffer(b) = 'n'
-            b += 1
-          case '\r' =>
-            buffer(b) = '\\'
-            b += 1
-            buffer(b) = 'r'
-            b += 1
-          case '\t' =>
-            buffer(b) = '\\'
-            b += 1
-            buffer(b) = 't'
-            b += 1
-          case _ =>
-            val n = c: Int
-            val hex = hexDigits
-            buffer(b) = '\\'
-            b += 1
-            buffer(b) = 'u'
-            b += 1
-            buffer(b) = hex(n >> 12)
-            b += 1
-            buffer(b) = hex((n >> 8) & 0xF)
-            b += 1
-            buffer(b) = hex((n >> 4) & 0xF)
-            b += 1
-            buffer(b) = hex(n & 0xF)
-            b += 1
-        }
-      }
-      
-      if (b >= L) {
-        out.write(buffer, 0, b)
-        b = 0
-      }
-      
-      i += 1
+      case '"' =>
+        buffer(b) = '\\'
+        b += 1
+        buffer(b) = '"'
+        b += 1
+      case '\\' =>
+        buffer(b) = '\\'
+        b += 1
+        buffer(b) = '\\'
+        b += 1
+      case '\b' =>
+        buffer(b) = '\\'
+        b += 1
+        buffer(b) = 'b'
+        b += 1
+      case '\f' =>
+        buffer(b) = '\\'
+        b += 1
+        buffer(b) = 'f'
+        b += 1
+      case '\n' =>
+        buffer(b) = '\\'
+        b += 1
+        buffer(b) = 'n'
+        b += 1
+      case '\r' =>
+        buffer(b) = '\\'
+        b += 1
+        buffer(b) = 'r'
+        b += 1
+      case '\t' =>
+        buffer(b) = '\\'
+        b += 1
+        buffer(b) = 't'
+        b += 1
+      case c =>
+        val n = c: Int
+        val hex = hexDigits
+        buffer(b) = '\\'
+        b += 1
+        buffer(b) = 'u'
+        b += 1
+        buffer(b) = hex(n >> 12)
+        b += 1
+        buffer(b) = hex((n >> 8) & 0xF)
+        b += 1
+        buffer(b) = hex((n >> 4) & 0xF)
+        b += 1
+        buffer(b) = hex(n & 0xF)
+        b += 1
     }
     
-    if (b > 0) {
-      out.write(buffer, 0, b)
-      b = 0
+    b
+  }
+  
+  @noinline private def emitStringLoopSlow(s: String, buffer: Array[Byte], offset: Int, until: Int): Int = {
+    var i = offset
+    var b = written
+    val watermark = this.watermark
+    while (i < until && b < watermark) {
+      b = emitStringSwitch(s.charAt(i), buffer, b)
+      i += 1
     }
+    written = b
+    i
+  }
+  
+  @noinline private def emitStringLoopFast(s: String, buffer: Array[Byte], offset: Int, until: Int): Int = {
+    var i = offset
+    var b = written
+    while (i < until) {
+      b = emitStringSwitch(s.charAt(i), buffer, b)
+      i += 1
+    }
+    written = b
+    i
+  }
+  
+  private def emitStringContents(s: String, offset: Int, until: Int): Int = {
+    if (written + (until - offset) * 6 > this.watermark)
+      emitStringLoopSlow(s, buffer, offset, until)
+    else
+      emitStringLoopFast(s, buffer, offset, until)
   }
   
   // public API
   
-  final def printRaw(value: String): Unit = {
+  def printRaw(value: String): Unit = { // TODO: incremental
     emitStringContents(value, 0, value.length)
   }
   
-  final def printNull(): Unit = out.write(NULL)
+  def printNull(): Unit = {
+    val buffer = this.buffer
+    var b = written
+    buffer(b) = 'n'
+    b += 1
+    buffer(b) = 'u'
+    b += 1
+    buffer(b) = 'l'
+    b += 1
+    buffer(b) = 'l'
+    written = b + 1
+  }
   
-  final def printTrue(): Unit = out.write(TRUE)
+  def printTrue(): Unit = {
+    val buffer = this.buffer
+    var b = written
+    buffer(b) = 't'
+    b += 1
+    buffer(b) = 'r'
+    b += 1
+    buffer(b) = 'u'
+    b += 1
+    buffer(b) = 'e'
+    written = b + 1
+  }
   
-  final def printFalse(): Unit = out.write(FALSE)
+  def printFalse(): Unit = {
+    val buffer = this.buffer
+    var b = written
+    buffer(b) = 'f'
+    b += 1
+    buffer(b) = 'a'
+    b += 1
+    buffer(b) = 'l'
+    b += 1
+    buffer(b) = 's'
+    b += 1
+    buffer(b) = 'e'
+    written = b + 1
+  }
   
-  final def printBoolean(value: Boolean): Unit = {
+  def printBoolean(value: Boolean): Unit = {
     if (value)
       printTrue()
     else
       printFalse()
   }
   
-  final def printInt(value: Int): Unit = {
-    val n = NumberOutput.outputInt(value, buffer, 0)
-    out.write(buffer, 0, n)
+  def printInt(value: Int): Unit = {
+    written += NumberOutput.outputInt(value, buffer, written)
   }
   
-  final def printLong(value: Long): Unit = {
-    val n = NumberOutput.outputLong(value, buffer, 0)
-    out.write(buffer, 0, n)
+  def printLong(value: Long): Unit = {
+    written += NumberOutput.outputLong(value, buffer, written)
   }
   
-  final def printString(value: String): Unit = {
-    if (value.length <= segmentSize) {
-      emitWholeString(value)
-    }
+  def printString(value: String): Unit = {
+    emitQuote()
+    
+    val L = value.length
+    val n = emitStringContents(value, 0, L)
+    if (n == L)
+      emitQuote()
     else {
-      out.write('"')
-      
       val depth = this.depth
       
       if (depth >= instructions.length)
         grow()
       
       instructions(depth) = 0
+      strOffset = n
       strValue = value
-      strOffset = 0
       
       this.depth = depth + 1
     }
   }
   
-  final def printEmptyArray(): Unit = {
+  def printEmptyArray(): Unit = {
     emitStartArray()
     emitEndArray()
   }
   
   
-  final def printArray(values: Iterable[J]): Unit = {
+  def printArray(values: Iterable[J]): Unit = {
     if (values.isEmpty)
       printEmptyArray()
     else
       printArray(values.iterator)
   }
   
-  final def printArray(iterator: Iterator[J]): Unit = {
+  def printArray(iterator: Iterator[J]): Unit = {
     emitStartArray()
     if (! iterator.hasNext)
       return emitEndArray()
@@ -318,7 +429,7 @@ class JsonPrinter[J](private val middleware: PrintingMiddleware[J],
     path(depth) = -1
     
     iterator match {
-      case it: AbstractIterator[J] @unchecked =>
+      case it: AbstractIterator[J] =>
         arrayIterators(depth) = it
       case it =>
         arrayIterators(depth) = new WrappedIterator(it)
@@ -327,19 +438,19 @@ class JsonPrinter[J](private val middleware: PrintingMiddleware[J],
     this.depth = depth + 1
   }
   
-  final def printEmptyObject(): Unit = {
+  def printEmptyObject(): Unit = {
     emitStartObject()
     emitEndObject()
   }
   
-  final def printObject(values: Iterable[(String, J)]): Unit = {
+  def printObject(values: Iterable[(String, J)]): Unit = {
     if (values.isEmpty)
       printEmptyObject()
     else
       printObject(values.iterator)
   }
   
-  final def printObject(iterator: Iterator[(String, J)]): Unit = {
+  def printObject(iterator: Iterator[(String, J)]): Unit = {
     emitStartObject()
     if (! iterator.hasNext)
       return emitEndObject()
@@ -353,7 +464,7 @@ class JsonPrinter[J](private val middleware: PrintingMiddleware[J],
     path(depth) = -1
     
     iterator match {
-      case it: AbstractIterator[(String, J)] @unchecked =>
+      case it: AbstractIterator[(String, J)] =>
         objectIterators(depth) = it
       case it =>
         objectIterators(depth) = new WrappedIterator(it)
@@ -361,11 +472,16 @@ class JsonPrinter[J](private val middleware: PrintingMiddleware[J],
     
     if (depth >= instructions.length)
       grow()
-  
+    
     this.depth = depth + 1
   }
   
-  final def reportError(message: String): Unit = {
+  private[impl] def emitStreamingSep(mode: StreamingMode): Unit = {
+    buffer(written) = mode.separator.toByte
+    written += 1
+  }
+  
+  def reportError(message: String): Unit = {
     if (depth < 1) {
       _errors ::= s"Serialization error at top level value: ${message}"
     }
@@ -390,6 +506,8 @@ class JsonPrinter[J](private val middleware: PrintingMiddleware[J],
     }
   }
   
+  // TODO: handle errors
+  
   def errors = _errors
   
   def drainErrors() = {
@@ -401,15 +519,11 @@ class JsonPrinter[J](private val middleware: PrintingMiddleware[J],
 
 object JsonPrinter
 {
-  private val segmentSize = 512
-  private val NULL  = Array[Byte]('n', 'u', 'l', 'l')
-  private val TRUE  = Array[Byte]('t', 'r', 'u', 'e')
-  private val FALSE = Array[Byte]('f', 'a', 'l', 's', 'e')
-  
+  // we're using AbstractIterator to avoid megamorphic `invokeinterface` calls,
+  // so we need to wrap exotic iterators
   private class WrappedIterator[T](underlying: Iterator[T]) extends AbstractIterator[T]
   {
     override def hasNext = underlying.hasNext
-  
     override def next() = underlying.next()
   }
   

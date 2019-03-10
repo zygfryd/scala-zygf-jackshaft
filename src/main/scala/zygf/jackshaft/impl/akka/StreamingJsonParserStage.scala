@@ -8,21 +8,22 @@ import scala.util.control.NonFatal
 import akka.stream._
 import akka.stream.stage._
 import akka.util.ByteString
-import zygf.jackshaft.impl.{ByteBufferParser, ParsingMode}
+import zygf.jackshaft.conf.JackshaftConfig
+import zygf.jackshaft.impl.{ByteBufferParser, ParsingMiddleware}
 
-abstract class StreamingJsonParserStage[J >: Null](val mode: ParsingMode,
-                                                   val makeParser: () => ByteBufferParser[J])
+class StreamingJsonParserStage[J](val parsing: ParsingMiddleware[J])(implicit config: JackshaftConfig = JackshaftConfig.default)
   extends GraphStage[FlowShape[ByteString, J]]
 {
   private val bytesIn = Inlet[ByteString]("bytesIn")
   private val jsonOut = Outlet[J]("jsonOut")
+  private val pMode = config.streamingMode.parsingMode
   
   val shape: FlowShape[ByteString, J] = FlowShape(bytesIn, jsonOut)
   
   override def createLogic(inheritedAttributes: Attributes) = new GraphStageLogic(shape) with InHandler with OutHandler {
     setHandlers(bytesIn, jsonOut, this)
     
-    val parser = makeParser()
+    val parser = new ByteBufferParser(parsing)
     val queue = new java.util.ArrayDeque[J]()
     val consumer: Consumer[J] = new Consumer[J] {
       override def accept(json: J): Unit = queue.add(json)
@@ -30,7 +31,7 @@ abstract class StreamingJsonParserStage[J >: Null](val mode: ParsingMode,
     
     override def onPush(): Unit = {
       try {
-        parser.parseAsync(grab(bytesIn).asByteBuffers.iterator, mode)(consumer)
+        parser.parseAsync(grab(bytesIn).asByteBuffers.iterator, pMode)(consumer)
       }
       catch {
         case NonFatal(e) =>
@@ -57,7 +58,7 @@ abstract class StreamingJsonParserStage[J >: Null](val mode: ParsingMode,
   
     override def onUpstreamFinish(): Unit = {
       try {
-        parser.finishAsync(mode)(consumer)
+        parser.finishAsync(pMode)(consumer)
       }
       catch {
         case NonFatal(e) =>

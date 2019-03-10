@@ -5,12 +5,14 @@ import scala.language.higherKinds
 import akka.stream._
 import akka.stream.stage._
 import akka.util.ByteString
-import zygf.jackshaft.impl.{ByteBufferOutputStream, JsonPrinter, PrintingMiddleware}
+import zygf.jackshaft.impl.{JsonPrinter, PrintingMiddleware}
 
 class JsonPrinterStage[J](value: J,
                           val printing: PrintingMiddleware[J])
   extends GraphStage[SourceShape[ByteString]]
 {
+  import Implicits._
+  
   private val bytesOut = Outlet[ByteString]("bytesOut")
   
   val shape = SourceShape(bytesOut)
@@ -19,29 +21,22 @@ class JsonPrinterStage[J](value: J,
   {
     setHandler(bytesOut, this)
     
-    val buffer = new ByteBufferOutputStream()
-    val printer = new JsonPrinter(printing, buffer)
-    var bytes = 0
+    val printer = new JsonPrinter(printing)
     
     override def preStart(): Unit = {
       printer.start(value)
     }
     
     override def onPull(): Unit = {
-      var bb = buffer.poll()
+      var bs = null: ByteString
       var done = false
-      while ((bb eq null) && !done) {
+      while ((bs eq null) && !done) {
         done = printer.continue()
-        if (done)
-          buffer.close()
-        else
-          buffer.maybeFlush()
-        bb = buffer.poll()
+        bs = printer.drainAs[ByteString](done)
       }
-      
-      if (bb ne null) {
-        bytes += bb.remaining
-        push(bytesOut, ByteString(bb))
+
+      if (bs ne null) {
+        push(bytesOut, bs)
       }
       
       if (done)

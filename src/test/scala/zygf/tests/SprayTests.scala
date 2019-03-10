@@ -1,6 +1,5 @@
 package zygf.tests
 
-import java.io.ByteArrayOutputStream
 import java.util.function.Consumer
 
 import scala.concurrent.Await
@@ -17,7 +16,8 @@ import akka.util.ByteString
 import com.fasterxml.jackson.core.JsonFactory
 import com.fasterxml.jackson.core.async.ByteArrayFeeder
 import spray.json._
-import zygf.jackshaft.spray.{SprayPrinter, SprayMiddleware}
+import zygf.jackshaft.conf.{JackshaftConfig, StreamingMode}
+import zygf.jackshaft.spray.{SprayParser, SprayPrinter}
 
 class SprayTests extends org.scalatest.FunSuite
 {
@@ -35,7 +35,7 @@ class SprayTests extends org.scalatest.FunSuite
     val fact = (new JsonFactory)
     val jax = fact.createNonBlockingByteArrayParser()
     val feeder = jax.getNonBlockingInputFeeder().asInstanceOf[ByteArrayFeeder]
-    val spray = new SprayMiddleware
+    val spray = SprayParser.createJacksonWrapper()
     var elements = Nil: List[JsValue]
     
     input.foreach { byte =>
@@ -54,7 +54,7 @@ class SprayTests extends org.scalatest.FunSuite
     val fact = (new JsonFactory)
     val jax = fact.createNonBlockingByteArrayParser()
     val feeder = jax.getNonBlockingInputFeeder().asInstanceOf[ByteArrayFeeder]
-    val spray = new SprayMiddleware
+    val spray = SprayParser.createJacksonWrapper()
     var elements = Nil: List[JsValue]
     
     input.foreach { byte =>
@@ -68,10 +68,11 @@ class SprayTests extends org.scalatest.FunSuite
     assert(elements == JsFalse :: JsTrue :: JsNumber(1) :: Nil)
   }
   
-  test("Source[JsValue, NotUsed] strict") {
+  test("Source[JsValue, NotUsed] read strict") {
     import zygf.jackshaft.spray.AkkaSprayJsonSupport._
-  
-    val input = "[1, true, false]".getBytes
+    implicit val config = JackshaftConfig.default.copy(streamingMode = StreamingMode.Array)
+    
+    val input = "[1, true, false]"
     val entity = Await.result(Marshal(input).to[MessageEntity], 1.seconds)
     val source = Await.result(Unmarshal(entity).to[Source[JsValue, NotUsed]], 1.seconds)
     
@@ -79,10 +80,11 @@ class SprayTests extends org.scalatest.FunSuite
     assert(results == Vector(JsNumber(1), JsTrue, JsFalse))
   }
   
-  test("Source[JsValue, NotUsed] chunked") {
-    import zygf.jackshaft.spray.AkkaSprayJsonSupport._
+  test("Source[JsValue, NotUsed] read chunked") {
     import akka.http.scaladsl.model.MediaTypes.`application/json`
-  
+    import zygf.jackshaft.spray.AkkaSprayJsonSupport._
+    implicit val config = JackshaftConfig.default.copy(streamingMode = StreamingMode.Array)
+    
     val input = "[1, true, false]".getBytes
     // byte by byte
     val entity = HttpEntity.Chunked(`application/json`, Source(input.toVector.map { byte => HttpEntity.Chunk(ByteString(byte)) } :+ HttpEntity.LastChunk))
@@ -92,9 +94,23 @@ class SprayTests extends org.scalatest.FunSuite
     assert(results == Vector(JsNumber(1), JsTrue, JsFalse))
   }
   
-  test("JsValue chunked") {
+  test("Source[JsValue, NotUsed] write") {
     import zygf.jackshaft.spray.AkkaSprayJsonSupport._
+    implicit val config = JackshaftConfig.default.copy(streamingMode = StreamingMode.Array)
+    
+    var input = Vector(JsNumber(1), JsTrue, JsFalse, JsString("foo"), JsObject("." -> JsArray.empty))
+    (1 to 10).foreach { _ => input ++= input }
+    val source = Source(input)
+    // byte by byte
+    val entity = Await.result(Marshal(source).to[MessageEntity], 1.seconds)
+    val result = Await.result(Unmarshal(entity).to[JsValue], 1.seconds)
+    
+    assert(result == JsArray(input))
+  }
+  
+  test("JsValue chunked") {
     import akka.http.scaladsl.model.MediaTypes.`application/json`
+    import zygf.jackshaft.spray.AkkaSprayJsonSupport._
   
     val input = "[1, true, false]".getBytes
     // byte by byte
@@ -106,19 +122,10 @@ class SprayTests extends org.scalatest.FunSuite
   
   test("printer") {
     import spray.json._
-    
+
     val input = "[1,{\"key\":[false,1.1,\"str\\u1234\",[null],[],{}]}]"
     val tree = input.parseJson
-  
-    {
-      val fact = (new JsonFactory)
-      val out = new ByteArrayOutputStream()
-      val print = new zygf.jackshaft.impl.JsonPrinter(SprayPrinter, out)
-      
-      print.start(tree)
-      while (!print.continue()) {}
-      
-      assert(input == new String(out.toByteArray))
-    }
+
+    assert(input == SprayPrinter.printString(tree))
   }
 }

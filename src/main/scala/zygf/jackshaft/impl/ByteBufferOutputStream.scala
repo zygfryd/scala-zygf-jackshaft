@@ -3,6 +3,9 @@ package zygf.jackshaft.impl
 import java.io.OutputStream
 import java.nio.ByteBuffer
 
+// UNUSED: There's no point in reusing ByteBuffers to improve performance with Akka
+// as it simply consumes them and allocates new copies for the data
+
 final class ByteBufferOutputStream(bufferSize: Int = 512) extends OutputStream
 {
   import ByteBufferOutputStream._
@@ -90,11 +93,16 @@ final class ByteBufferOutputStream(bufferSize: Int = 512) extends OutputStream
     }
   }
   
-  override def close(): Unit = {
+  override def flush(): Unit = {
     if ((current ne null) && (current.backend.position: Int) > 0) {
+      buffers.addLast(current)
       ready.addLast(current.send())
-      buffers.clear()
+      current = null
     }
+  }
+  
+  override def close(): Unit = {
+    flush()
       
     super.close()
   }

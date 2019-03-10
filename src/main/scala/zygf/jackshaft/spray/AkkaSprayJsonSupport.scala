@@ -5,90 +5,57 @@
 
 package zygf.jackshaft.spray
 
-import scala.concurrent.Future
 import scala.language.implicitConversions
 
 import akka.NotUsed
 import akka.http.scaladsl.marshalling._
-import akka.http.scaladsl.model.MediaTypes.`application/json`
-import akka.http.scaladsl.model._
-import akka.http.scaladsl.unmarshalling.{FromByteStringUnmarshaller, FromEntityUnmarshaller, Unmarshaller}
-import akka.http.scaladsl.util.FastFuture
-import akka.stream.scaladsl.{Keep, Source}
-import akka.util.ByteString
+import akka.http.scaladsl.unmarshalling.{FromByteStringUnmarshaller, FromEntityUnmarshaller}
+import akka.stream.scaladsl.Source
 import spray.json._
-import zygf.jackshaft.exceptions.UnexpectedEndOfInputException
-import zygf.jackshaft.impl.akka.{AkkaSupport, JsonParserStage, StreamingJsonParserStage}
-import zygf.jackshaft.impl.{ByteBufferParser, ParsingMode}
+import zygf.jackshaft.conf.{JackshaftConfig, StreamingMode}
+import zygf.jackshaft.impl.akka.AkkaSupport
 
 /**
   * A trait providing automatic to and from JSON marshalling/unmarshalling using an in-scope *spray-json* protocol.
   */
-abstract class AkkaSprayJsonSupport extends AkkaSupport(SprayPrinter)
+abstract class AkkaSprayJsonSupport extends AkkaSupport(SprayParser, SprayPrinter)
 {
-  private def parseStrict(input: ByteString): Future[JsValue] = {
-    val parser = new ByteBufferParser(new SprayMiddleware)
-    val json = parser.parseValue(input.asByteBuffers.iterator)
-    if (json eq null) {
-      FastFuture.failed(UnexpectedEndOfInputException)
+  // IDK what needs these
+//  implicit def sprayJsonUnmarshallerConverter[T](reader: JsonReader[T]): FromEntityUnmarshaller[T] =
+//    sprayJsonUnmarshaller(reader)
+  
+  implicit def sprayJsValueUnmarshaller(implicit config: JackshaftConfig = JackshaftConfig.default) = fromEntityUnmarshaller
+  
+  implicit def sprayJsonUnmarshaller[T](implicit reader: JsonReader[T], config: JackshaftConfig = JackshaftConfig.default): FromEntityUnmarshaller[T] =
+    sprayJsValueUnmarshaller.map(reader.read)
+  
+  implicit def sprayJsValueByteStringUnmarshaller(implicit config: JackshaftConfig = JackshaftConfig.default) = fromByteStringUnmarshaller
+  
+  implicit def sprayJsonByteStringUnmarshaller[T](implicit reader: JsonReader[T], config: JackshaftConfig = JackshaftConfig.default): FromByteStringUnmarshaller[T] =
+    sprayJsValueByteStringUnmarshaller.map(reader.read)
+  
+  implicit def sprayJsValueSourceReader(implicit config: JackshaftConfig = JackshaftConfig.default): FromEntityUnmarshaller[Source[JsValue, NotUsed]] =
+    sourceFromEntityUnmarshaller
+  
+  implicit def sprayJsonSourceReader[T](implicit reader: JsonReader[T],
+                                        config: JackshaftConfig = JackshaftConfig.default): FromEntityUnmarshaller[Source[T, NotUsed]] =
+    sourceFromEntityUnmarshaller.map[Source[T, NotUsed]] { source =>
+      source.map(reader.read)
     }
-    else
-      FastFuture.successful(json)
-  }
   
-  implicit val singleJsValueFromByteStringUnmarshaller: FromByteStringUnmarshaller[JsValue] = {
-    Unmarshaller.withMaterializer[ByteString, JsValue] {
-      implicit ec =>
-        implicit mat =>
-          input =>
-            parseStrict(input)
-    }
-  }
-  
-  implicit val singleJsValueFromEntityUnmarshaller: FromEntityUnmarshaller[JsValue] = {
-    Unmarshaller.withMaterializer[HttpEntity, JsValue] {
-      implicit ec =>
-        implicit mat => {
-          case HttpEntity.Strict(_, input) =>
-            parseStrict(input)
-          
-          case entity =>
-            entity.dataBytes.runWith(ByteStringsToValueStage)
-        }
-    }.forContentTypes(`application/json`)
-  }
-  
-  implicit def singleJsonReadableFromByteStringUnmarshaller[T](implicit reader: RootJsonReader[T]): FromByteStringUnmarshaller[T] =
-    singleJsValueFromByteStringUnmarshaller.map(jsonReader[T].read)
-  
-  implicit def singleJsonReadableFromEntityUnmarshaller[T](implicit reader: RootJsonReader[T]): FromEntityUnmarshaller[T] =
-    singleJsValueFromEntityUnmarshaller.map(jsonReader[T].read)
-  
-  implicit def singleJsonReadableFromEntityUnmarshallerConverter[T](reader: RootJsonReader[T]): FromEntityUnmarshaller[T] =
-    singleJsonReadableFromEntityUnmarshaller(reader)
-  
-  object ByteStringsToValueStage extends JsonParserStage(() => new ByteBufferParser(new SprayMiddleware))
-  object ByteStringsToArrayStage extends StreamingJsonParserStage(ParsingMode.ARRAY, () => new ByteBufferParser(new SprayMiddleware))
-  object ByteStringsToStreamStage extends StreamingJsonParserStage(ParsingMode.STREAM, () => new ByteBufferParser(new SprayMiddleware))
-  
-  implicit val streamingJsArrayFromEntityUnmarshaller: FromEntityUnmarshaller[Source[JsValue, NotUsed]] = {
-    Unmarshaller.withMaterializer[HttpEntity, Source[JsValue, NotUsed]] {
-      implicit ec =>
-        implicit mat =>
-          entity =>
-            val source = entity
-              .dataBytes
-              .viaMat(ByteStringsToArrayStage)(Keep.right)
-            
-            FastFuture.successful(source)
-    }
-  }
-  
-  implicit def sprayJsValueMarshaller = marshallerImpl 
+  implicit def sprayJsValueMarshaller(implicit config: JackshaftConfig = JackshaftConfig.default) = toEntityMarshaller 
   
   implicit def sprayJsonMarshaller[T](implicit writer: RootJsonWriter[T]): ToEntityMarshaller[T] =
-    marshallerImpl compose writer.write
+    toEntityMarshaller compose writer.write
+  
+  implicit def sprayJsValueSourceWriter(implicit config: JackshaftConfig = JackshaftConfig.default): ToEntityMarshaller[Source[JsValue, NotUsed]] =
+    sourceToEntityMarshaller
+  
+  implicit def sprayJsonSourceWriter[T](implicit writer: JsonWriter[T],
+                                        config: JackshaftConfig = JackshaftConfig.default): ToEntityMarshaller[Source[T, NotUsed]] =
+    sourceToEntityMarshaller.compose { source =>
+      source.map(writer.write)
+    }
 }
 
 object AkkaSprayJsonSupport extends AkkaSprayJsonSupport
-
