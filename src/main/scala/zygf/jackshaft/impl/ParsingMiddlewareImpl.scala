@@ -1,5 +1,7 @@
 package zygf.jackshaft.impl
 
+import java.io.InputStream
+
 import scala.reflect.ClassTag
 
 import zygf.jackshaft.conf.JackshaftConfig
@@ -97,6 +99,15 @@ abstract class ParsingMiddlewareImpl[J, A, M](val jClass: Class[J]) extends Pars
   }
   
   override def parseBytes(input: Array[Byte])(implicit config: JackshaftConfig) = {
+    val jax = config.jacksonFactory.createParser(input)
+    val wrapper = createJacksonWrapper()
+    try wrapper.parseValue(jax)
+    finally {
+      jax.close()
+    }
+  }
+  
+  override def parseStream(input: InputStream)(implicit config: JackshaftConfig) = {
     val jax = config.jacksonFactory.createParser(input)
     val wrapper = createJacksonWrapper()
     try wrapper.parseValue(jax)
