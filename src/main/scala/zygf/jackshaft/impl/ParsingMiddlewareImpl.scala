@@ -4,8 +4,10 @@ import scala.reflect.ClassTag
 
 import zygf.jackshaft.conf.JackshaftConfig
 
-abstract class ParsingMiddlewareImpl[J, A, M](implicit J: ClassTag[J]) extends ParsingMiddleware[J]
+abstract class ParsingMiddlewareImpl[J, A, M](val jClass: Class[J]) extends ParsingMiddleware[J]
 {
+  def this()(implicit J: ClassTag[J]) = this(J.runtimeClass.asInstanceOf[Class[J]])
+  
   /**
     * Output an AST null node
     */
@@ -85,7 +87,7 @@ abstract class ParsingMiddlewareImpl[J, A, M](implicit J: ClassTag[J]) extends P
     */
   def growMap(map: M, key: String, value: J): M
   
-  override def parseString(input: String)(implicit config: JackshaftConfig) = {
+  override def parseString(input: String)(implicit config: JackshaftConfig = JackshaftConfig.default) = {
     val jax = config.jacksonFactory.createParser(input)
     val wrapper = createJacksonWrapper()
     try wrapper.parseValue(jax)
@@ -94,7 +96,7 @@ abstract class ParsingMiddlewareImpl[J, A, M](implicit J: ClassTag[J]) extends P
     }
   }
   
-  override def parseBytes(input: Array[Byte])(implicit config: JackshaftConfig) = {
+  override def parseBytes(input: Array[Byte])(implicit config: JackshaftConfig = JackshaftConfig.default) = {
     val jax = config.jacksonFactory.createParser(input)
     val wrapper = createJacksonWrapper()
     try wrapper.parseValue(jax)
@@ -104,5 +106,5 @@ abstract class ParsingMiddlewareImpl[J, A, M](implicit J: ClassTag[J]) extends P
   }
   
   final override def createJacksonWrapper()(implicit config: JackshaftConfig = JackshaftConfig.default): JacksonWrapper[J] =
-    new JacksonWrapperImpl[J, A, M](this, J.runtimeClass.asInstanceOf[Class[J]], 4, config.maxParsingDepth)
+    new JacksonWrapperImpl[J, A, M](this, jClass, 8, config.maxParsingDepth)
 }
