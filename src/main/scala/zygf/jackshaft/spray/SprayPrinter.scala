@@ -9,55 +9,55 @@ object SprayPrinter extends PrintingMiddleware[JsValue]
   // check for nulls when ASTs are constructed, and we can't just crash in
   // the middle of sending a HTTP response
   
-  def emit(json: JsValue, print: JsonPrinter[JsValue]): Unit = {
+  def emit(json: JsValue, print: JsonPrinter[JsValue], buffer: Array[Byte], offset: Int): Int = {
     (json: Any) match {
       case null =>
         print.reportError("null value")
-        print.printNull()
+        print.printNull(buffer, offset)
       
       case v: JsString =>
         if (v.value ne null) {
-          print.printString(v.value)
+          print.printString(buffer, offset, v.value)
         }
         else {
           print.reportError("null string")
-          print.printNull()
+          print.printNull(buffer, offset)
         }
       
       case v: JsObject =>
         if (v.fields ne null)
-          print.printObject(v.fields)
+          print.printObject(buffer, offset, v.fields)
         else {
           print.reportError("null object fields")
-          print.printNull()
+          print.printNull(buffer, offset)
         }
       
       case v: JsArray =>
         if (v.elements ne null)
-          print.printArray(v.elements)
+          print.printArray(buffer, offset, v.elements)
         else {
           print.reportError("null array elements")
-          print.printNull()
+          print.printNull(buffer, offset)
         }
         
       case v: JsNumber =>
         if (v.value ne null) {
-          print.printRaw(v.value.bigDecimal.toString)
+          print.printRaw(buffer, offset, v.value.bigDecimal.toString)
         }
         else {
           print.reportError("null number")
-          print.printNull()
+          print.printNull(buffer, offset)
         }
       
       case v: JsBoolean =>
-        print.printBoolean(v.value)
+        print.printBoolean(buffer, offset, v.value)
       
       case JsNull =>
-        print.printNull()
+        print.printNull(buffer, offset)
         
       case other => // perhaps a miscasted object
         print.reportError(s"unrecognized type: ${other.getClass.getName}")
-        print.printNull()
+        print.printNull(buffer, offset)
     }
   }
 }

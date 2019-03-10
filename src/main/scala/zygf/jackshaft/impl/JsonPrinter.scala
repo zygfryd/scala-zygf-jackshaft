@@ -10,10 +10,6 @@ final class JsonPrinter[J](private val middleware: PrintingMiddleware[J])
 {
   import JsonPrinter._
   
-  private val buffer = new Array[Byte](4096) // TODO: refactor member into argument, so we can use a thread local buffer
-  private val watermark = buffer.length - 32
-  private var written = 0
-  
   private var instructions = new Array[Byte](8)
   private var arrayIterators = new Array[AbstractIterator[J]](8)
   private var objectIterators = new Array[AbstractIterator[(String, J)]](8)
@@ -26,10 +22,6 @@ final class JsonPrinter[J](private val middleware: PrintingMiddleware[J])
   
   private var _errors = Nil: List[String]
   
-  def isEmpty = written == 0
-  
-  def nonEmpty = written > 0
-  
   private def grow(): Unit = {
     val l = instructions.length << 1
     instructions = java.util.Arrays.copyOf(instructions, l)
@@ -38,73 +30,40 @@ final class JsonPrinter[J](private val middleware: PrintingMiddleware[J])
     path = java.util.Arrays.copyOf(path.asInstanceOf[Array[AnyRef]], l).asInstanceOf[Array[Any]]
   }
   
-  def drain(into: Array[Byte], offset: Int): Int = {
-    val w = written
-    System.arraycopy(buffer, 0, into, offset, w)
-    written = 0
-    w
-  }
-  
-  def drain(into: java.lang.StringBuilder): Int = {
-    val w = written
-    var i = 0
-    while (i < w) {
-      into.append(buffer(i).toChar)
-      i += 1
-    }
-    written = 0
-    w
-  }
-  
-  def drain(into: scala.StringBuilder): Int = {
-    val w = written
-    var i = 0
-    while (i < w) {
-      into.append(buffer(i).toChar)
-      i += 1
-    }
-    written = 0
-    w
-  }
-  
-  def drainAs[B >: Null](force: Boolean = false)(implicit B: WrapsByteArray[B]): B = {
-    if (written > 0 && (force || written >= watermark)) {
-      val w = written
-      written = 0
-      B.copy(buffer, 0, w)
-    }
-    else
-      null
-  }
-  
-  def start(value: J): Unit = {
+  def start(buffer: Array[Byte], offset: Int, value: J): Int = {
     require(depth == 0)
-    middleware.emit(value, this)
+    middleware.emit(value, this, buffer, offset)
   }
   
-  def continue(): Boolean = {
+  def continue(buffer: Array[Byte], offset: Int): Int = {
     val oldDepth = depth
     val at = oldDepth - 1
     if (at < 0)
-      return true
+      return -1
     
-    if (written >= watermark)
-      return false
+    val watermark = buffer.length - 32
+    
+    if (offset >= watermark)
+      return offset
+    
+    var written = offset
     
     (instructions(at): @switch) match {
       case 0 =>
         val s = strValue
         val L = s.length
-        val n = emitStringContents(s, strOffset, L)
+        val p = emitStringContents(buffer, offset, s, strOffset, L)
+        val n = getIndex(p)
+        val nOffset = getOffset(p)
         if (n == L) {
           strValue = null
-          buffer(written) = '"'
-          written += 1
           depth -= 1
-          return false
+          buffer(nOffset) = '"'
+          nOffset + 1
         }
         else {
           strOffset = n
+          nOffset
         }
       
       case insn @ (1 | 3) =>
@@ -121,17 +80,17 @@ final class JsonPrinter[J](private val middleware: PrintingMiddleware[J])
           
           if (pair._1 ne null) {
             if (insn == 3)
-              emitObjectSep()
+              written = emitObjectSep(buffer, written)
             
-            printString(pair._1)
+            written = printString(buffer, written, pair._1)
             
             if (depth > oldDepth) {
               instructions(at) = (insn + 1).toByte
               memberValue = pair
             }
             else {
-              emitFieldSep()
-              middleware.emit(pair._2, this)
+              written = emitFieldSep(buffer, written)
+              written = middleware.emit(pair._2, this, buffer, written)
               instructions(at) = 3
             }
           }
@@ -140,22 +99,24 @@ final class JsonPrinter[J](private val middleware: PrintingMiddleware[J])
           }
           
           if (depth == oldDepth /* nothing new pushed */ && !it.hasNext) {
-            emitEndObject()
+            written = emitEndObject(buffer, written)
             objectIterators(at) = null
             depth -= 1
           }
         }
         else {
-          emitEndObject()
+          written = emitEndObject(buffer, written)
           objectIterators(at) = null
           depth -= 1
         }
+        written
       
       case insn @ (2 | 4) =>
         // object field continuation
-        emitFieldSep()
-        middleware.emit(memberValue._2, this)
+        written = emitFieldSep(buffer, written)
+        written = middleware.emit(memberValue._2, this, buffer, written)
         instructions(at) = 3
+        written
       
       case insn @ (-1 | -2) =>
         val it = arrayIterators(at)
@@ -165,70 +126,69 @@ final class JsonPrinter[J](private val middleware: PrintingMiddleware[J])
           path(at) = path(at).asInstanceOf[Integer] + 1
           
           if (insn == -2)
-            emitArraySep()
+            written = emitArraySep(buffer, written)
           else
             instructions(at) = -2
           
-          middleware.emit(elem, this)
+          written = middleware.emit(elem, this, buffer, written)
           
           if (depth == oldDepth /* nothing new pushed */ && !it.hasNext) {
-            emitEndArray()
+            written = emitEndArray(buffer, written)
             arrayIterators(at) = null
             depth -= 1
           }
         }
         else {
-          emitEndArray()
+          written = emitEndArray(buffer, written)
           arrayIterators(at) = null
           depth -= 1
         }
+        written
     }
-    
-    false
   }
   
-  private def emitStartObject(): Unit = {
-    buffer(written) = '{'
-    written += 1
+  @inline private def emitStartObject(buffer: Array[Byte], offset: Int): Int = {
+    buffer(offset) = '{'
+    offset + 1
   }
   
-  private def emitFieldSep(): Unit = {
-    buffer(written) = ':'
-    written += 1
+  @inline private def emitFieldSep(buffer: Array[Byte], offset: Int): Int = {
+    buffer(offset) = ':'
+    offset + 1
   }
   
-  private def emitObjectSep(): Unit = {
-    buffer(written) = ','
-    written += 1
+  @inline private def emitObjectSep(buffer: Array[Byte], offset: Int): Int = {
+    buffer(offset) = ','
+    offset + 1
   }
   
-  private def emitEndObject(): Unit = {
-    buffer(written) = '}'
-    written += 1
+  @inline private def emitEndObject(buffer: Array[Byte], offset: Int): Int = {
+    buffer(offset) = '}'
+    offset + 1
   }
   
-  private[impl] def emitStartArray(): Unit = {
-    buffer(written) = '['
-    written += 1
+  @inline private[impl] def emitStartArray(buffer: Array[Byte], offset: Int): Int = {
+    buffer(offset) = '['
+    offset + 1
   }
   
-  private def emitArraySep(): Unit = {
-    buffer(written) = ','
-    written += 1
+  @inline private def emitArraySep(buffer: Array[Byte], offset: Int): Int = {
+    buffer(offset) = ','
+    offset + 1
   }
   
-  private def emitEndArray(): Unit = {
-    buffer(written) = ']'
-    written += 1
+  @inline private def emitEndArray(buffer: Array[Byte], offset: Int): Int = {
+    buffer(offset) = ']'
+    offset + 1
   }
   
-  private def emitQuote(): Unit = {
-    buffer(written) = '"'
-    written += 1
+  @inline private def emitQuote(buffer: Array[Byte], offset: Int): Int = {
+    buffer(offset) = '"'
+    offset + 1
   }
   
-  @inline private def emitStringSwitch(c: Char, buffer: Array[Byte], b0: Int): Int = {
-    var b = b0
+  @inline private def emitStringSwitch(buffer: Array[Byte], c: Char, offset: Int): Int = {
+    var b = offset
     
     (c: @switch) match {
       case c @ (' ' | '!' | '#' | '$' | '%' | '&' | '\'' | '(' | ')' | '*' | '+' | ',' | '-' | '.' | '/' | '0' | '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9' | ':' | ';' | '<' | '=' | '>' | '?' | '@' | 'A' | 'B' | 'C' | 'D' | 'E' | 'F' | 'G' | 'H' | 'I' | 'J' | 'K' | 'L' | 'M' | 'N' | 'O' | 'P' | 'Q' | 'R' | 'S' | 'T' | 'U' | 'V' | 'W' | 'X' | 'Y' | 'Z' | '[' | ']' | '^' | '_' | '`' | 'a' | 'b' | 'c' | 'd' | 'e' | 'f' | 'g' | 'h' | 'i' | 'j' | 'k' | 'l' | 'm' | 'n' | 'o' | 'p' | 'q' | 'r' | 's' | 't' | 'u' | 'v' | 'w' | 'x' | 'y' | 'z' | '{' | '|' | '}' | '~') =>
@@ -289,45 +249,46 @@ final class JsonPrinter[J](private val middleware: PrintingMiddleware[J])
     b
   }
   
-  @noinline private def emitStringLoopSlow(s: String, buffer: Array[Byte], offset: Int, until: Int): Int = {
-    var i = offset
-    var b = written
-    val watermark = this.watermark
+  @inline private def toPair(offset: Int, index: Int): Long = (offset.toLong << 32) | (index & 0xffffffffL)
+  @inline private def getOffset(pair: Long): Int = (pair >> 32).toInt
+  @inline private def getIndex(pair: Long): Int = pair.toInt
+  
+  @noinline private def emitStringLoopSlow(buffer: Array[Byte], offset: Int, s: String, sOffset: Int, until: Int): Long = {
+    var i = sOffset
+    var b = offset
+    val watermark = buffer.length - 32
     while (i < until && b < watermark) {
-      b = emitStringSwitch(s.charAt(i), buffer, b)
+      b = emitStringSwitch(buffer, s.charAt(i), b)
       i += 1
     }
-    written = b
-    i
+    toPair(b, i)
   }
   
-  @noinline private def emitStringLoopFast(s: String, buffer: Array[Byte], offset: Int, until: Int): Int = {
-    var i = offset
-    var b = written
+  @noinline private def emitStringLoopFast(buffer: Array[Byte], offset: Int, s: String, sOffset: Int, until: Int): Long = {
+    var i = sOffset
+    var b = offset
     while (i < until) {
-      b = emitStringSwitch(s.charAt(i), buffer, b)
+      b = emitStringSwitch(buffer, s.charAt(i), b)
       i += 1
     }
-    written = b
-    i
+    toPair(b, i)
   }
   
-  private def emitStringContents(s: String, offset: Int, until: Int): Int = {
-    if (written + (until - offset) * 6 > this.watermark)
-      emitStringLoopSlow(s, buffer, offset, until)
+  private def emitStringContents(buffer: Array[Byte], offset: Int, s: String, sOffset: Int, until: Int): Long = {
+    if (offset + (until - sOffset) * 6 + 32 > buffer.length)
+      emitStringLoopSlow(buffer, offset, s, sOffset, until)
     else
-      emitStringLoopFast(s, buffer, offset, until)
+      emitStringLoopFast(buffer, offset, s, sOffset, until)
   }
   
   // public API
   
-  def printRaw(value: String): Unit = { // TODO: incremental
-    emitStringContents(value, 0, value.length)
+  def printRaw(buffer: Array[Byte], offset: Int, value: String): Int = { // TODO: incremental
+    getOffset(emitStringContents(buffer, offset, value, 0, value.length))
   }
   
-  def printNull(): Unit = {
-    val buffer = this.buffer
-    var b = written
+  def printNull(buffer: Array[Byte], offset: Int): Int = {
+    var b = offset
     buffer(b) = 'n'
     b += 1
     buffer(b) = 'u'
@@ -335,12 +296,11 @@ final class JsonPrinter[J](private val middleware: PrintingMiddleware[J])
     buffer(b) = 'l'
     b += 1
     buffer(b) = 'l'
-    written = b + 1
+    b + 1
   }
   
-  def printTrue(): Unit = {
-    val buffer = this.buffer
-    var b = written
+  def printTrue(buffer: Array[Byte], offset: Int): Int = {
+    var b = offset
     buffer(b) = 't'
     b += 1
     buffer(b) = 'r'
@@ -348,12 +308,11 @@ final class JsonPrinter[J](private val middleware: PrintingMiddleware[J])
     buffer(b) = 'u'
     b += 1
     buffer(b) = 'e'
-    written = b + 1
+    b + 1
   }
   
-  def printFalse(): Unit = {
-    val buffer = this.buffer
-    var b = written
+  def printFalse(buffer: Array[Byte], offset: Int): Int = {
+    var b = offset
     buffer(b) = 'f'
     b += 1
     buffer(b) = 'a'
@@ -363,31 +322,32 @@ final class JsonPrinter[J](private val middleware: PrintingMiddleware[J])
     buffer(b) = 's'
     b += 1
     buffer(b) = 'e'
-    written = b + 1
+    b + 1
   }
   
-  def printBoolean(value: Boolean): Unit = {
+  @inline def printBoolean(buffer: Array[Byte], offset: Int, value: Boolean): Int = {
     if (value)
-      printTrue()
+      printTrue(buffer, offset)
     else
-      printFalse()
+      printFalse(buffer, offset)
   }
   
-  def printInt(value: Int): Unit = {
-    written += NumberOutput.outputInt(value, buffer, written)
+  @inline def printInt(buffer: Array[Byte], offset: Int, value: Int): Int = {
+    NumberOutput.outputInt(value, buffer, offset)
   }
   
-  def printLong(value: Long): Unit = {
-    written += NumberOutput.outputLong(value, buffer, written)
+  @inline def printLong(buffer: Array[Byte], offset: Int, value: Long): Int = {
+    NumberOutput.outputLong(value, buffer, offset)
   }
   
-  def printString(value: String): Unit = {
-    emitQuote()
+  def printString(buffer: Array[Byte], offset: Int, value: String): Int = {
+    val written = emitQuote(buffer, offset)
     
     val L = value.length
-    val n = emitStringContents(value, 0, L)
+    val p = emitStringContents(buffer, written, value, 0, L)
+    val n = getIndex(p)
     if (n == L)
-      emitQuote()
+      emitQuote(buffer, getOffset(p))
     else {
       val depth = this.depth
       
@@ -399,26 +359,27 @@ final class JsonPrinter[J](private val middleware: PrintingMiddleware[J])
       strValue = value
       
       this.depth = depth + 1
+      
+      getOffset(p)
     }
   }
   
-  def printEmptyArray(): Unit = {
-    emitStartArray()
-    emitEndArray()
+  @inline def printEmptyArray(buffer: Array[Byte], offset: Int): Int = {
+    emitEndArray(buffer, emitStartArray(buffer, offset))
   }
   
-  
-  def printArray(values: Iterable[J]): Unit = {
+  @inline def printArray(buffer: Array[Byte], offset: Int, values: Iterable[J]): Int = {
     if (values.isEmpty)
-      printEmptyArray()
+      printEmptyArray(buffer, offset)
     else
-      printArray(values.iterator)
+      printArray(buffer, offset, values.iterator)
   }
   
-  def printArray(iterator: Iterator[J]): Unit = {
-    emitStartArray()
+  def printArray(buffer: Array[Byte], offset: Int, iterator: Iterator[J]): Int = {
+    val written = emitStartArray(buffer, offset)
+    
     if (! iterator.hasNext)
-      return emitEndArray()
+      return emitEndArray(buffer, written)
     
     val depth = this.depth
     
@@ -436,24 +397,26 @@ final class JsonPrinter[J](private val middleware: PrintingMiddleware[J])
     }
     
     this.depth = depth + 1
+    
+    written
   }
   
-  def printEmptyObject(): Unit = {
-    emitStartObject()
-    emitEndObject()
+  @inline def printEmptyObject(buffer: Array[Byte], offset: Int): Int = {
+    emitEndObject(buffer, emitStartObject(buffer, offset))
   }
   
-  def printObject(values: Iterable[(String, J)]): Unit = {
+  @inline def printObject(buffer: Array[Byte], offset: Int, values: Iterable[(String, J)]): Int = {
     if (values.isEmpty)
-      printEmptyObject()
+      printEmptyObject(buffer, offset)
     else
-      printObject(values.iterator)
+      printObject(buffer, offset, values.iterator)
   }
   
-  def printObject(iterator: Iterator[(String, J)]): Unit = {
-    emitStartObject()
+  def printObject(buffer: Array[Byte], offset: Int, iterator: Iterator[(String, J)]): Int = {
+    val written = emitStartObject(buffer, offset)
+    
     if (! iterator.hasNext)
-      return emitEndObject()
+      return emitEndObject(buffer, written)
     
     val depth = this.depth
     
@@ -474,11 +437,13 @@ final class JsonPrinter[J](private val middleware: PrintingMiddleware[J])
       grow()
     
     this.depth = depth + 1
+    
+    written
   }
   
-  private[impl] def emitStreamingSep(mode: StreamingMode): Unit = {
-    buffer(written) = mode.separator.toByte
-    written += 1
+  @inline private[impl] def emitStreamingSep(buffer: Array[Byte], offset: Int, mode: StreamingMode): Int = {
+    buffer(offset) = mode.separator.toByte
+    offset + 1
   }
   
   def reportError(message: String): Unit = {

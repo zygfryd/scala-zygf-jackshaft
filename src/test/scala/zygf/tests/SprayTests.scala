@@ -102,8 +102,8 @@ class SprayTests extends org.scalatest.FunSuite
     (1 to 10).foreach { _ => input ++= input }
     val source = Source(input)
     // byte by byte
-    val entity = Await.result(Marshal(source).to[MessageEntity], 1.seconds)
-    val result = Await.result(Unmarshal(entity).to[JsValue], 1.seconds)
+    val entity = Await.result(Marshal(source).to[MessageEntity], 2.seconds)
+    val result = Await.result(Unmarshal(entity).to[JsValue], 2.seconds)
     
     assert(result == JsArray(input))
   }
@@ -128,4 +128,20 @@ class SprayTests extends org.scalatest.FunSuite
 
     assert(input == SprayPrinter.printString(tree))
   }
+  
+  test("ByteString marshaller") {
+    import spray.json._
+    import zygf.jackshaft.spray.AkkaSprayJsonSupport
+    object Support extends AkkaSprayJsonSupport
+    {
+      implicit val bsMarshaller = toByteStringMarshaller 
+    }
+    import Support.bsMarshaller
+    
+    val input = "[1,{\"key\":[false,1.1,\"str\\u1234\",[null],[],{}]}]"
+    val tree = input.parseJson
+    
+    assert(input == Await.result(Marshal(tree).to[ByteString], 1.seconds).decodeString("ascii"))
+  }
+  
 }

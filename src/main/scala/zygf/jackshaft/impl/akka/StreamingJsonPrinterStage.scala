@@ -12,7 +12,6 @@ class StreamingJsonPrinterStage[J](val printing: PrintingMiddleware[J])(implicit
   extends GraphStage[FlowShape[J, ByteString]]
 {
   import StreamingJsonPrinterStage._
-  import akka.Implicits._
   
   private val jsonIn   = Inlet[J]("jsonIn")
   private val bytesOut = Outlet[ByteString]("bytesOut")
@@ -34,73 +33,72 @@ class StreamingJsonPrinterStage[J](val printing: PrintingMiddleware[J])(implicit
     }
     
     override def onPush(): Unit = {
-      if (done) {
-        done = false
-  
-        if (separate) {
-          printer.emitStreamingSep(mode)
-          separate = false
-        }
-        else if (array && ! opened) {
-          printer.emitStartArray()
-          opened = true
-        }
-        
-        printer.start(grab(jsonIn))
-        
-        separate = printer.nonEmpty
-        
-        if (isClosed(jsonIn))
-          completeStage()
-        else
-          pull(jsonIn)
-      }
-      else if (isClosed(jsonIn))
-        completeStage()
-      
       if (isAvailable(bytesOut)) {
-        onPull()
+        val buf = config.tempBufferProvider.acquire()
+        try
+          print(buf)
+        finally
+          config.tempBufferProvider.release(buf)
+      }
+    }
+    
+    def print(buf: Array[Byte]): Unit = {
+      var offset = 0
+      
+      if (done) {
+        if (isAvailable(jsonIn)) {
+          if (separate) {
+            offset = printer.emitStreamingSep(buf, offset, mode)
+            separate = false
+          }
+          else if (array && !opened) {
+            offset = printer.emitStartArray(buf, offset)
+            opened = true
+          }
+          
+          offset = printer.start(buf, offset, grab(jsonIn))
+          
+          done = false
+          
+          if (!isClosed(jsonIn))
+            pull(jsonIn)
+        }
+      }
+      
+      while (! done) {
+        val nOffset = printer.continue(buf, offset)
+        if (nOffset < 0) {
+          done = true
+          separate = true
+        }
+        else if (nOffset > 0)
+          offset = nOffset
+        else {
+          push(bytesOut, ByteString.fromArray(buf, 0, nOffset))
+          return
+        }
+      }
+      
+      if (offset > 0) {
+        push(bytesOut, ByteString.fromArray(buf, 0, offset))
       }
     }
     
     override def onPull(): Unit = {
-      if (! done) {
-        val bs = print(false)
-        if (bs ne null)
-          push(bytesOut, bs)
-      }
-      else if (isAvailable(jsonIn)) {
-        onPush()
-      }
-    }
-    
-    override def onUpstreamFinish(): Unit = {
-      var bbs = Vector.empty[ByteString]
-      while (!done) {
-        val bs = print(true)
-        if (bs ne null)
-          bbs :+= bs
-      }
+      val buf = config.tempBufferProvider.acquire()
+      try
+        print(buf)
+      finally
+        config.tempBufferProvider.release(buf)
       
-      if (array)
-        bbs :+= closeArray
-      
-      if (! bbs.isEmpty)
-        emitMultiple(bytesOut, bbs)
-      
-      completeStage()
+      if (done && isClosed(jsonIn)) {
+        if (array)
+          emit(bytesOut, closeArray)
+        completeStage()
+      }
     }
   
-    def print(end: Boolean): ByteString = {
-      var bs = printer.drainAs[ByteString](done)
-      while (bs eq null) {
-        done = printer.continue()
-        bs = printer.drainAs[ByteString](done)
-      }
-      
-      separate = done
-      bs
-    }
+    override def onUpstreamFinish(): Unit = ()
   }
 }
 

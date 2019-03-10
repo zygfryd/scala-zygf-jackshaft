@@ -32,7 +32,7 @@ final class ByteBufferParser[J](val parsing: ParsingMiddleware[J])(implicit conf
         try {
           var left = bb.remaining
           while (left > 0) {
-            val chunk = left min 4096
+            val chunk = left min buf.length
             bb.get(buf, 0, chunk)
             left -= chunk
     
@@ -72,10 +72,10 @@ final class ByteBufferParser[J](val parsing: ParsingMiddleware[J])(implicit conf
         try {
           var left = bb.remaining
           while (left > 0) {
-            val chunk = left min 4096
+            val chunk = left min buf.length
             bb.get(buf, 0, chunk)
             left -= chunk
-    
+            
             feeder.feedInput(buf, 0, chunk)
             if (wrapper.parseAsync(jax, mode, callback)) {
               return true

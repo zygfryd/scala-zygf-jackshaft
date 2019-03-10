@@ -17,8 +17,6 @@ import zygf.jackshaft.impl.{ByteBufferParser, JsonPrinter, ParsingMiddleware, Pr
 abstract class AkkaSupport[J](val parsing: ParsingMiddleware[J],
                               val printing: PrintingMiddleware[J])
 {
-  import Implicits._
-  
   protected def parseStrict(input: ByteString)
                            (implicit config: JackshaftConfig = JackshaftConfig.default): Future[J] = {
     val parser = new ByteBufferParser(parsing)
@@ -33,19 +31,34 @@ abstract class AkkaSupport[J](val parsing: ParsingMiddleware[J],
   protected def printStrict(json: J)
                            (implicit config: JackshaftConfig = JackshaftConfig.default): ByteString = {
     val printer = new JsonPrinter(printing)
-    printer.start(json)
+    val buf = config.tempBufferProvider.acquire()
     
-    var bs = printer.drainAs[ByteString](false)
-    var bss = if (bs eq null) ByteString.empty else bs
-    var done = false
-    while ((bs eq null) && !done) {
-      done = printer.continue()
-      bs = printer.drainAs[ByteString](done)
-      if (bs ne null)
-        bss ++= bs
+    try {
+      var bs = ByteString.empty
+      var offset = printer.start(buf, 0, json)
+      var done = false
+
+      while (! done) {
+        val nOffset = printer.continue(buf, offset)
+        if (nOffset < 0)
+          done = true
+        else if (nOffset > offset)
+          offset = nOffset
+        else {
+          bs ++= ByteString.fromArray(buf, 0, nOffset)
+          offset = 0
+        }
+      }
+      
+      if (offset > 0) {
+        bs ++= ByteString.fromArray(buf, 0, offset)
+      }
+      
+      bs
     }
-    
-    bss
+    finally {
+      config.tempBufferProvider.release(buf)
+    }
   }
   
   protected def fromByteStringUnmarshaller(implicit config: JackshaftConfig = JackshaftConfig.default): FromByteStringUnmarshaller[J] = {
