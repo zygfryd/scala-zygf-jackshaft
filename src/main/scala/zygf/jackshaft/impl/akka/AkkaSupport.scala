@@ -11,7 +11,7 @@ import akka.http.scaladsl.util.FastFuture
 import akka.stream.scaladsl.{Keep, Source}
 import akka.util.ByteString
 import zygf.jackshaft.conf.JackshaftConfig
-import zygf.jackshaft.exceptions.UnexpectedEndOfInputException
+import zygf.jackshaft.exceptions.{PrintingException, UnexpectedEndOfInputException}
 import zygf.jackshaft.impl.{ByteBufferParser, JsonPrinter, ParsingMiddleware, PrintingMiddleware}
 
 abstract class AkkaSupport[J](val parsing: ParsingMiddleware[J],
@@ -37,7 +37,7 @@ abstract class AkkaSupport[J](val parsing: ParsingMiddleware[J],
       var bs = ByteString.empty
       var offset = printer.start(buf, 0, json)
       var done = false
-
+      
       while (! done) {
         val nOffset = printer.continue(buf, offset)
         if (nOffset < 0)
@@ -48,6 +48,10 @@ abstract class AkkaSupport[J](val parsing: ParsingMiddleware[J],
           bs ++= ByteString.fromArray(buf, 0, nOffset)
           offset = 0
         }
+      }
+      
+      if (printer.errors ne Nil) {
+        throw PrintingException(printer.errors.head)
       }
       
       if (offset > 0) {

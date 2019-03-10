@@ -448,10 +448,10 @@ final class JsonPrinter[J](private val middleware: PrintingMiddleware[J])
   
   def reportError(message: String): Unit = {
     if (depth < 1) {
-      _errors ::= s"Serialization error at top level value: ${message}"
+      _errors ::= s"Printing error at top level value: ${message}"
     }
     else {
-      val sb = new java.lang.StringBuilder("Serialization error at ")
+      val sb = new java.lang.StringBuilder("Printing error at ")
       var i = 0
       while (i < depth) {
         path(i) match {
@@ -466,12 +466,13 @@ final class JsonPrinter[J](private val middleware: PrintingMiddleware[J])
         
         i += 1
       }
+      sb.append(':')
+      sb.append(' ')
+      sb.append(message)
       
-      _errors ::= s"Serialization error at ${sb}: ${message}"
+      _errors ::= sb.toString()
     }
   }
-  
-  // TODO: handle errors
   
   def errors = _errors
   

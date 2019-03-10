@@ -17,7 +17,7 @@ class JsonPrinterStage[J](value: J,
   
   val shape = SourceShape(bytesOut)
   
-  override def createLogic(inheritedAttributes: Attributes) = new GraphStageLogic(shape) with OutHandler
+  override def createLogic(inheritedAttributes: Attributes) = new GraphStageLogicWithLogging(shape) with OutHandler
   {
     setHandler(bytesOut, this)
     
@@ -51,6 +51,13 @@ class JsonPrinterStage[J](value: J,
         
         if (offset > 0) {
           push(bytesOut, ByteString.fromArray(buf, 0, offset))
+        }
+        
+        var errors = Nil: List[String]
+        while({ errors = printer.drainErrors(); errors } ne Nil) {
+          errors.foreach { error =>
+            log.error(error)
+          }
         }
         
         completeStage()

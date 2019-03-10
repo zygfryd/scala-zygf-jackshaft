@@ -17,6 +17,7 @@ import com.fasterxml.jackson.core.JsonFactory
 import com.fasterxml.jackson.core.async.ByteArrayFeeder
 import spray.json._
 import zygf.jackshaft.conf.{JackshaftConfig, StreamingMode}
+import zygf.jackshaft.exceptions.PrintingException
 import zygf.jackshaft.spray.{SprayParser, SprayPrinter}
 
 class SprayTests extends org.scalatest.FunSuite
@@ -144,4 +145,11 @@ class SprayTests extends org.scalatest.FunSuite
     assert(input == Await.result(Marshal(tree).to[ByteString], 1.seconds).decodeString("ascii"))
   }
   
+  test("printer error") {
+    import spray.json._
+    
+    val tree = JsArray(JsString(null: String))
+  
+    assertThrows[PrintingException](SprayPrinter.printString(tree))
+  }
 }

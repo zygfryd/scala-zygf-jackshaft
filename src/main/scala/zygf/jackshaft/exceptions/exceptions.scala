@@ -5,3 +5,5 @@ case class UnexpectedEndOfInputException(message: String) extends RuntimeExcepti
 object UnexpectedEndOfInputException extends UnexpectedEndOfInputException("Unexpected end of JSON document")
 
 case class ArrayExpectedException(message: String) extends RuntimeException(message, null, true, false)
+
+case class PrintingException(message: String) extends RuntimeException(message, null, true, false)

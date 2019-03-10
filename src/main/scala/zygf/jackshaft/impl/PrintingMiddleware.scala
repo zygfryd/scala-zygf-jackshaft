@@ -3,6 +3,7 @@ package zygf.jackshaft.impl
 import java.io.{ByteArrayOutputStream, OutputStream}
 
 import zygf.jackshaft.conf.JackshaftConfig
+import zygf.jackshaft.exceptions.PrintingException
 
 abstract class PrintingMiddleware[J]
 {
@@ -34,6 +35,10 @@ abstract class PrintingMiddleware[J]
         }
         else
           offset = nOffset
+        
+        if (printer.errors ne Nil) {
+          throw PrintingException(printer.errors.head)
+        }
       }
       
       if (offset > 0) {

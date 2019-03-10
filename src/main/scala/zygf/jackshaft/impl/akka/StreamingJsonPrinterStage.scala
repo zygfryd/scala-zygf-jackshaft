@@ -18,7 +18,7 @@ class StreamingJsonPrinterStage[J](val printing: PrintingMiddleware[J])(implicit
   
   val shape: FlowShape[J, ByteString] = FlowShape(jsonIn, bytesOut)
   
-  override def createLogic(inheritedAttributes: Attributes) = new GraphStageLogic(shape) with InHandler with OutHandler {
+  override def createLogic(inheritedAttributes: Attributes) = new GraphStageLogicWithLogging(shape) with InHandler with OutHandler {
     setHandlers(jsonIn, bytesOut, this)
   
     val printer  = new JsonPrinter(printing)
@@ -70,6 +70,13 @@ class StreamingJsonPrinterStage[J](val printing: PrintingMiddleware[J])(implicit
         if (nOffset < 0) {
           done = true
           separate = true
+          
+          var errors = Nil: List[String]
+          while({ errors = printer.drainErrors(); errors } ne Nil) {
+            errors.foreach { error =>
+              log.error(error)
+            }
+          }
         }
         else if (nOffset > 0)
           offset = nOffset
