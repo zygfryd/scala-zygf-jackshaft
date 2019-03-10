@@ -16,7 +16,7 @@ object JackshaftConfig
   val noThreadLocalsFactory = defaultFactory
     .disable(JsonFactory.Feature.USE_THREAD_LOCAL_FOR_BUFFER_RECYCLING)
   
-  val default = JackshaftConfig()
+  implicit val default = JackshaftConfig()
   val noThreadLocals = default.copy(tempBufferProvider = TempBufferProvider.Fresh,
                                     jacksonFactory = noThreadLocalsFactory)
 }

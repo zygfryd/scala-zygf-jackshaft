@@ -18,7 +18,7 @@ abstract class AkkaSupport[J](val parsing: ParsingMiddleware[J],
                               val printing: PrintingMiddleware[J])
 {
   protected def parseStrict(input: ByteString)
-                           (implicit config: JackshaftConfig = JackshaftConfig.default): Future[J] = {
+                           (implicit config: JackshaftConfig): Future[J] = {
     val parser = new ByteBufferParser(parsing)
     val json = parser.parseValue(input.asByteBuffers.iterator)
     if (null == json) {
@@ -29,7 +29,7 @@ abstract class AkkaSupport[J](val parsing: ParsingMiddleware[J],
   }
   
   protected def printStrict(json: J)
-                           (implicit config: JackshaftConfig = JackshaftConfig.default): ByteString = {
+                           (implicit config: JackshaftConfig): ByteString = {
     val printer = new JsonPrinter(printing)
     val buf = config.tempBufferProvider.acquire()
     
@@ -61,7 +61,7 @@ abstract class AkkaSupport[J](val parsing: ParsingMiddleware[J],
     }
   }
   
-  protected def fromByteStringUnmarshaller(implicit config: JackshaftConfig = JackshaftConfig.default): FromByteStringUnmarshaller[J] = {
+  protected def fromByteStringUnmarshaller(implicit config: JackshaftConfig): FromByteStringUnmarshaller[J] = {
     Unmarshaller.withMaterializer[ByteString, J] {
       implicit ec =>
         implicit mat =>
@@ -70,12 +70,12 @@ abstract class AkkaSupport[J](val parsing: ParsingMiddleware[J],
     }
   }
   
-  protected def toByteStringMarshaller(implicit config: JackshaftConfig = JackshaftConfig.default): ToByteStringMarshaller[J] =
+  protected def toByteStringMarshaller(implicit config: JackshaftConfig): ToByteStringMarshaller[J] =
     Marshaller.withFixedContentType(`application/json`) { json =>
       printStrict(json)
     }
   
-  protected def fromEntityUnmarshaller(implicit config: JackshaftConfig = JackshaftConfig.default): FromEntityUnmarshaller[J] = {
+  protected def fromEntityUnmarshaller(implicit config: JackshaftConfig): FromEntityUnmarshaller[J] = {
     Unmarshaller.withMaterializer[HttpEntity, J] {
       implicit ec =>
         implicit mat => {
@@ -88,13 +88,13 @@ abstract class AkkaSupport[J](val parsing: ParsingMiddleware[J],
     }.forContentTypes(`application/json`)
   }
   
-  protected def toEntityMarshaller(implicit config: JackshaftConfig = JackshaftConfig.default): ToEntityMarshaller[J] =
+  protected def toEntityMarshaller(implicit config: JackshaftConfig): ToEntityMarshaller[J] =
     Marshaller.withFixedContentType(`application/json`) { json =>
       HttpEntity(`application/json`,
                  Source.fromGraph(new JsonPrinterStage(json, printing)))
     }
   
-  protected def sourceFromEntityUnmarshaller(implicit config: JackshaftConfig = JackshaftConfig.default): FromEntityUnmarshaller[Source[J, NotUsed]] = {
+  protected def sourceFromEntityUnmarshaller(implicit config: JackshaftConfig): FromEntityUnmarshaller[Source[J, NotUsed]] = {
     Unmarshaller.withMaterializer[HttpEntity, Source[J, NotUsed]] {
       implicit ec =>
         implicit mat =>
@@ -107,7 +107,7 @@ abstract class AkkaSupport[J](val parsing: ParsingMiddleware[J],
     }
   }
   
-  protected def sourceToEntityMarshaller(implicit config: JackshaftConfig = JackshaftConfig.default): ToEntityMarshaller[Source[J, NotUsed]] = {
+  protected def sourceToEntityMarshaller(implicit config: JackshaftConfig): ToEntityMarshaller[Source[J, NotUsed]] = {
     Marshaller.withFixedContentType(`application/json`) { jsons =>
       HttpEntity(`application/json`,
                  jsons.via(new StreamingJsonPrinterStage(printing)))

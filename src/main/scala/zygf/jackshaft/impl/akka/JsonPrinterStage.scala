@@ -10,7 +10,7 @@ import zygf.jackshaft.impl.{JsonPrinter, PrintingMiddleware}
 
 class JsonPrinterStage[J](value: J,
                           val printing: PrintingMiddleware[J])
-                         (implicit config: JackshaftConfig = JackshaftConfig.default)
+                         (implicit config: JackshaftConfig)
   extends GraphStage[SourceShape[ByteString]]
 {
   private val bytesOut = Outlet[ByteString]("bytesOut")

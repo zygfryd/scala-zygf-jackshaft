@@ -6,7 +6,7 @@ import java.util.function.Consumer
 import com.fasterxml.jackson.core.async.ByteArrayFeeder
 import zygf.jackshaft.conf.JackshaftConfig
 
-final class ByteBufferParser[J](val parsing: ParsingMiddleware[J])(implicit config: JackshaftConfig = JackshaftConfig.default)
+final class ByteBufferParser[J](val parsing: ParsingMiddleware[J])(implicit config: JackshaftConfig)
 {
   private val jax = config.jacksonFactory.createNonBlockingByteArrayParser()
   private val feeder = jax.getNonBlockingInputFeeder().asInstanceOf[ByteArrayFeeder]

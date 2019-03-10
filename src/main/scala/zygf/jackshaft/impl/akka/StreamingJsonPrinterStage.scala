@@ -8,7 +8,7 @@ import akka.util.ByteString
 import zygf.jackshaft.conf.{JackshaftConfig, StreamingMode}
 import zygf.jackshaft.impl._
 
-class StreamingJsonPrinterStage[J](val printing: PrintingMiddleware[J])(implicit config: JackshaftConfig = JackshaftConfig.default)
+class StreamingJsonPrinterStage[J](val printing: PrintingMiddleware[J])(implicit config: JackshaftConfig)
   extends GraphStage[FlowShape[J, ByteString]]
 {
   import StreamingJsonPrinterStage._

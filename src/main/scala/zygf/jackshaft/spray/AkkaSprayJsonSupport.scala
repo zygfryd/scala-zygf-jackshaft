@@ -24,35 +24,35 @@ abstract class AkkaSprayJsonSupport extends AkkaSupport(SprayParser, SprayPrinte
 //  implicit def sprayJsonUnmarshallerConverter[T](reader: JsonReader[T]): FromEntityUnmarshaller[T] =
 //    sprayJsonUnmarshaller(reader)
   
-  implicit def sprayJsValueUnmarshaller(implicit config: JackshaftConfig = JackshaftConfig.default) = fromEntityUnmarshaller
+  implicit def sprayJsValueUnmarshaller(implicit config: JackshaftConfig) = fromEntityUnmarshaller
   
-  implicit def sprayJsonUnmarshaller[T](implicit reader: JsonReader[T], config: JackshaftConfig = JackshaftConfig.default): FromEntityUnmarshaller[T] =
+  implicit def sprayJsonUnmarshaller[T](implicit reader: JsonReader[T], config: JackshaftConfig): FromEntityUnmarshaller[T] =
     sprayJsValueUnmarshaller.map(reader.read)
   
-  implicit def sprayJsValueByteStringUnmarshaller(implicit config: JackshaftConfig = JackshaftConfig.default) = fromByteStringUnmarshaller
+  implicit def sprayJsValueByteStringUnmarshaller(implicit config: JackshaftConfig) = fromByteStringUnmarshaller
   
-  implicit def sprayJsonByteStringUnmarshaller[T](implicit reader: JsonReader[T], config: JackshaftConfig = JackshaftConfig.default): FromByteStringUnmarshaller[T] =
+  implicit def sprayJsonByteStringUnmarshaller[T](implicit reader: JsonReader[T], config: JackshaftConfig): FromByteStringUnmarshaller[T] =
     sprayJsValueByteStringUnmarshaller.map(reader.read)
   
-  implicit def sprayJsValueSourceReader(implicit config: JackshaftConfig = JackshaftConfig.default): FromEntityUnmarshaller[Source[JsValue, NotUsed]] =
+  implicit def sprayJsValueSourceReader(implicit config: JackshaftConfig): FromEntityUnmarshaller[Source[JsValue, NotUsed]] =
     sourceFromEntityUnmarshaller
   
   implicit def sprayJsonSourceReader[T](implicit reader: JsonReader[T],
-                                        config: JackshaftConfig = JackshaftConfig.default): FromEntityUnmarshaller[Source[T, NotUsed]] =
+                                        config: JackshaftConfig): FromEntityUnmarshaller[Source[T, NotUsed]] =
     sourceFromEntityUnmarshaller.map[Source[T, NotUsed]] { source =>
       source.map(reader.read)
     }
   
-  implicit def sprayJsValueMarshaller(implicit config: JackshaftConfig = JackshaftConfig.default) = toEntityMarshaller 
+  implicit def sprayJsValueMarshaller(implicit config: JackshaftConfig) = toEntityMarshaller 
   
   implicit def sprayJsonMarshaller[T](implicit writer: RootJsonWriter[T]): ToEntityMarshaller[T] =
     toEntityMarshaller compose writer.write
   
-  implicit def sprayJsValueSourceWriter(implicit config: JackshaftConfig = JackshaftConfig.default): ToEntityMarshaller[Source[JsValue, NotUsed]] =
+  implicit def sprayJsValueSourceWriter(implicit config: JackshaftConfig): ToEntityMarshaller[Source[JsValue, NotUsed]] =
     sourceToEntityMarshaller
   
   implicit def sprayJsonSourceWriter[T](implicit writer: JsonWriter[T],
-                                        config: JackshaftConfig = JackshaftConfig.default): ToEntityMarshaller[Source[T, NotUsed]] =
+                                        config: JackshaftConfig): ToEntityMarshaller[Source[T, NotUsed]] =
     sourceToEntityMarshaller.compose { source =>
       source.map(writer.write)
     }

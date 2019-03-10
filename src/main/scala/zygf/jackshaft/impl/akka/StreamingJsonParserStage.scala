@@ -11,7 +11,7 @@ import akka.util.ByteString
 import zygf.jackshaft.conf.JackshaftConfig
 import zygf.jackshaft.impl.{ByteBufferParser, ParsingMiddleware}
 
-class StreamingJsonParserStage[J](val parsing: ParsingMiddleware[J])(implicit config: JackshaftConfig = JackshaftConfig.default)
+class StreamingJsonParserStage[J](val parsing: ParsingMiddleware[J])(implicit config: JackshaftConfig)
   extends GraphStage[FlowShape[ByteString, J]]
 {
   private val bytesIn = Inlet[ByteString]("bytesIn")

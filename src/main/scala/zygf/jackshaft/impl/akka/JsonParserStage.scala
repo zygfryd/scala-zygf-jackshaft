@@ -13,7 +13,7 @@ import zygf.jackshaft.conf.JackshaftConfig
 import zygf.jackshaft.exceptions.UnexpectedEndOfInputException
 import zygf.jackshaft.impl.{ByteBufferParser, ParsingMiddleware, ParsingMode}
 
-class JsonParserStage[J](val parsing: ParsingMiddleware[J])(implicit config: JackshaftConfig = JackshaftConfig.default)
+class JsonParserStage[J](val parsing: ParsingMiddleware[J])(implicit config: JackshaftConfig)
   extends GraphStageWithMaterializedValue[SinkShape[ByteString], Future[J]]
 {
   private val bytesIn = Inlet[ByteString]("bytesIn")
