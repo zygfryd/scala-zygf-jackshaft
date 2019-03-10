@@ -1,9 +1,11 @@
 package zygf.jackshaft.spray
 
+import scala.collection.immutable.VectorBuilder
+
 import spray.json._
 import zygf.jackshaft.impl.OptimizedMapParsingMiddleware
 
-object SprayParser extends OptimizedMapParsingMiddleware[JsValue, Vector[JsValue]]
+object SprayParser extends OptimizedMapParsingMiddleware[JsValue, VectorBuilder[JsValue]]
 {
   private val zero = Integer.valueOf(0)
   
@@ -21,13 +23,13 @@ object SprayParser extends OptimizedMapParsingMiddleware[JsValue, Vector[JsValue
     JsObject(map)
   
   override def emptyArray() =
-    Vector.empty[JsValue]
+    new VectorBuilder[JsValue]
   
-  override def growArray(array: Vector[JsValue], value: JsValue) =
-    array :+ value
+  override def growArray(array: VectorBuilder[JsValue], value: JsValue) =
+    array += value
   
-  override def buildArray(array: Vector[JsValue]) =
-    JsArray(array)
+  override def buildArray(array: VectorBuilder[JsValue]) =
+    JsArray(array.result)
   
   override def buildNumber(num: Number) = {
     num match {
