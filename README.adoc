@@ -15,7 +15,8 @@ Alpha-quality software.
 
 For each supported AST:
 
-- `akka-http` entity unmarshaller
+- `akka-http` entity marshaller and unmarshaller for single JSON values and `akka-stream` streams
+- Regular `String` and `InputStream/OutputStream` parser and printer for completeness
 
 == Usage
 
@@ -24,16 +25,55 @@ Artifact::
 +
 [source,scala]
 ----
-"net.zygfryd" %% "jackshaft" % "0.1.1"
+"net.zygfryd" %% "jackshaft" % "0.2.0"
 ----
 
-Import::
-+
+=== Support for akka-http
+
+Instead of the usual:
+
+[source,scala]
+----
+import akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport._
+----
+
+use:
+
 [source,scala]
 ----
 import zygf.jackshaft.spray.AkkaSprayJsonSupport._
 ----
 
+Marshalling and unmarshalling of single values should work the same.
+Streaming multiple values however no longer uses the `*EntityStreamingSupport` classes, as these
+are designed to configure a framing protocol, which isn't needed with native support for multiple values.
+
+To unmarshal an entity as a stream of JSON values simply use:
+
+[source,scala]
+----
+entity(as[Source[JsValue, NotUsed]]) { ... }
+----
+ 
+By default `jackshaft` assumes a whitespace-separated format for multiple values, if you'd like to stream
+the contents of an array instead, define:
+
+[source,scala]
+----
+import zygf.jackshaft.conf._
+
+implicit val config = JackshaftConfig.default.copy(streamingMode = StreamingMode.Array)
+----
+
+== Performance
+
+Parsing performance is on average slightly above the default `spray-json` parser, and should use less memory for
+large JSON documents.
+
+Printing performance is 20-50% lower than competing libraries, due to its non-blocking nature.
+
 == TODO
 
-- everything else.
+- optimize
+- add more ASTs
+- add more streaming IO frameworks
