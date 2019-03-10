@@ -1,6 +1,7 @@
 package zygf.jackshaft.spray
 
 import spray.json._
+import zygf.jackshaft.conf.JackshaftConfig
 import zygf.jackshaft.impl.{JsonPrinter, PrintingMiddleware}
 
 object SprayPrinter extends PrintingMiddleware[JsValue]
@@ -59,5 +60,19 @@ object SprayPrinter extends PrintingMiddleware[JsValue]
         print.reportError(s"unrecognized type: ${other.getClass.getName}")
         print.printNull(buffer, offset)
     }
+  }
+  
+  override def printString(json: JsValue)(implicit config: JackshaftConfig) = {
+    val bufferSize = json match {
+      case arr: JsArray =>
+        16 * arr.elements.size
+      case obj: JsObject =>
+        32 * obj.fields.size
+      case s: JsString =>
+        2 * s.value.length
+      case _ =>
+        16
+    }
+    printString(json, bufferSize)
   }
 }
