@@ -72,35 +72,50 @@ class SprayTests extends org.scalatest.FunSuite
   test("Source[JsValue, NotUsed] read strict") {
     import zygf.jackshaft.spray.AkkaSprayJsonSupport._
     implicit val config = JackshaftConfig.default.copy(streamingMode = StreamingMode.Array)
-    
+
     val input = "[1, true, false]"
     val entity = Await.result(Marshal(input).to[MessageEntity], 1.seconds)
     val source = Await.result(Unmarshal(entity).to[Source[JsValue, NotUsed]], 1.seconds)
-    
+
     val results = Await.result(source.runFold(Vector.empty[JsValue])(_ :+ _), 1.seconds)
     assert(results == Vector(JsNumber(1), JsTrue, JsFalse))
   }
-  
+
   test("Source[JsValue, NotUsed] read chunked") {
     import akka.http.scaladsl.model.MediaTypes.`application/json`
     import zygf.jackshaft.spray.AkkaSprayJsonSupport._
     implicit val config = JackshaftConfig.default.copy(streamingMode = StreamingMode.Array)
-    
+
     val input = "[1, true, false]".getBytes
     // byte by byte
     val entity = HttpEntity.Chunked(`application/json`, Source(input.toVector.map { byte => HttpEntity.Chunk(ByteString(byte)) } :+ HttpEntity.LastChunk))
     val source = Await.result(Unmarshal(entity).to[Source[JsValue, NotUsed]], 1.seconds)
-    
+
     val results = Await.result(source.runFold(Vector.empty[JsValue])(_ :+ _), 5.seconds)
     assert(results == Vector(JsNumber(1), JsTrue, JsFalse))
   }
-  
+
   test("Source[JsValue, NotUsed] write") {
     import zygf.jackshaft.spray.AkkaSprayJsonSupport._
     implicit val config = JackshaftConfig.default.copy(streamingMode = StreamingMode.Array)
-    
+
     var input = Vector(JsNumber(1), JsTrue, JsFalse, JsString("foo"), JsObject("." -> JsArray.empty))
     (1 to 10).foreach { _ => input ++= input }
+    val source = Source(input)
+    // byte by byte
+    val entity = Await.result(Marshal(source).to[MessageEntity], 2.seconds)
+    val result = Await.result(Unmarshal(entity).to[JsValue], 2.seconds)
+
+    assert(result == JsArray(input))
+  }
+  
+  test("Source[JsValue, NotUsed] write big values") {
+    import zygf.jackshaft.spray.AkkaSprayJsonSupport._
+    implicit val config = JackshaftConfig.default.copy(streamingMode = StreamingMode.Array)
+    
+    val bigValue = JsString("1234567890".repeat(500))
+    
+    val input = Vector(bigValue, bigValue, bigValue, bigValue)
     val source = Source(input)
     // byte by byte
     val entity = Await.result(Marshal(source).to[MessageEntity], 2.seconds)

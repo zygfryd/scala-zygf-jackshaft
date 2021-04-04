@@ -78,7 +78,7 @@ class StreamingJsonPrinterStage[J](val printing: PrintingMiddleware[J])(implicit
             }
           }
         }
-        else if (nOffset > 0)
+        else if (nOffset > offset)
           offset = nOffset
         else {
           push(bytesOut, ByteString.fromArray(buf, 0, nOffset))
@@ -105,7 +105,13 @@ class StreamingJsonPrinterStage[J](val printing: PrintingMiddleware[J])(implicit
       }
     }
   
-    override def onUpstreamFinish(): Unit = ()
+    override def onUpstreamFinish(): Unit = {
+      if (done && !isAvailable(jsonIn)) {
+        if (array)
+          emit(bytesOut, closeArray)
+        completeStage()
+      }
+    }
   }
 }
 
