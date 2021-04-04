@@ -6,7 +6,7 @@ Supported ASTs: https://github.com/spray/spray-json[spray-json].
 
 Supported Scala versions: `2.11`, `2.12`, `2.13`.
 
-Supported jackson-core versions: `2.9+`.
+Supported jackson-core versions: `2.10+`.
 
 [CAUTION]
 Alpha-quality software.
@@ -25,7 +25,7 @@ Artifact::
 +
 [source,scala]
 ----
-"net.zygfryd" %% "jackshaft" % "0.2.0"
+"net.zygfryd" %% "jackshaft" % "0.2.1"
 ----
 
 === Support for akka-http

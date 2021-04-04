@@ -27,8 +27,6 @@ class JsonPrinterStage[J](value: J,
     override def onPull(): Unit = {
       val buf = config.tempBufferProvider.acquire()
       try {
-        var bs = ByteString.empty
-        
         var offset = if (started) 0
         else {
           started = true

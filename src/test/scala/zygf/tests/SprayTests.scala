@@ -10,7 +10,6 @@ import akka.actor.ActorSystem
 import akka.http.scaladsl.marshalling.Marshal
 import akka.http.scaladsl.model.{HttpEntity, MessageEntity}
 import akka.http.scaladsl.unmarshalling.Unmarshal
-import akka.stream.ActorMaterializer
 import akka.stream.scaladsl.Source
 import akka.util.ByteString
 import com.fasterxml.jackson.core.JsonFactory
@@ -23,7 +22,6 @@ import zygf.jackshaft.spray.{SprayParser, SprayPrinter}
 class SprayTests extends org.scalatest.FunSuite
 {
   implicit val sys = ActorSystem("SprayJsonSupportSpec")
-  implicit val mat = ActorMaterializer()
   import sys.dispatcher
   
   // 2.11

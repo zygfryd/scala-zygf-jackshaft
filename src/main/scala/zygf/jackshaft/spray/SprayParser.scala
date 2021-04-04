@@ -29,7 +29,7 @@ object SprayParser extends OptimizedMapParsingMiddleware[JsValue, VectorBuilder[
     array += value
   
   override def buildArray(array: VectorBuilder[JsValue]) =
-    JsArray(array.result)
+    JsArray(array.result())
   
   override def buildNumber(num: Number) = {
     num match {
