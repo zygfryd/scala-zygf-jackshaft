@@ -4,12 +4,12 @@ Incremental (non-blocking) parsing for Scala JSON ASTs, based on `jackson-core`.
 
 Supported ASTs: https://github.com/spray/spray-json[spray-json].
 
-Supported Scala versions: `2.11`, `2.12`, `2.13`.
+Supported Scala versions: `2.11`, `2.12`, `2.13`, `3.0`, `3.1`.
 
 Supported jackson-core versions: `2.10+`.
 
 [CAUTION]
-Alpha-quality software.
+Beta-quality software.
 
 == Provides
 
@@ -25,7 +25,7 @@ Artifact::
 +
 [source,scala]
 ----
-"net.zygfryd" %% "jackshaft" % "0.2.1"
+"net.zygfryd" %% "jackshaft" % "0.2.2"
 ----
 
 === Support for akka-http
@@ -62,10 +62,12 @@ the contents of an array instead, define:
 ----
 import zygf.jackshaft.conf._
 
-implicit val config = JackshaftConfig.default.copy(streamingMode = StreamingMode.Array)
+implicit val config: JackshaftConfig = JackshaftConfig.default.copy(streamingMode = StreamingMode.Array)
 ----
 
 == Performance
+
+This library is optimized for peak memory usage, by never building a string or byte array to contain the whole serialized JSON document.
 
 Parsing performance is on average slightly above the default `spray-json` parser, and should use less memory for
 large JSON documents.
