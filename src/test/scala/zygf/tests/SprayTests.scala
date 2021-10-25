@@ -134,6 +134,18 @@ class SprayTests extends org.scalatest.funsuite.AnyFunSuite
     assert(result == JsArray(Vector(JsNumber(1), JsTrue, JsFalse)))
   }
   
+  test("JsValue chunked with trailing garbage") {
+    import akka.http.scaladsl.model.MediaTypes.`application/json`
+    import zygf.jackshaft.spray.AkkaSprayJsonSupport._
+    
+    val input = "[1, true, false] asdljas;lk".getBytes
+    // byte by byte
+    val entity = HttpEntity.Chunked(`application/json`, Source(input.toVector.map { byte => HttpEntity.Chunk(ByteString(byte)) } :+ HttpEntity.LastChunk))
+    val result = Await.result(Unmarshal(entity).to[JsValue], 1.seconds)
+    
+    assert(result == JsArray(Vector(JsNumber(1), JsTrue, JsFalse)))
+  }
+  
   test("printer") {
     import spray.json._
 

@@ -27,10 +27,14 @@ class JsonParserStage[J](val parsing: ParsingMiddleware[J])(implicit config: Jac
     {
       setHandler(bytesIn, this)
       
-      val parser = new ByteBufferParser(parsing)
+      private val parser = new ByteBufferParser(parsing)
+      private var result: Option[J] = None
       
-      val consumer: Consumer[J] = new Consumer[J] {
-        override def accept(json: J): Unit = promise.trySuccess(json)
+      private val consumer: Consumer[J] = new Consumer[J] {
+        override def accept(json: J): Unit = {
+          if (result.isEmpty)   
+            result = Some(json)
+        }
       }
       
       override def preStart(): Unit = {
@@ -38,7 +42,7 @@ class JsonParserStage[J](val parsing: ParsingMiddleware[J])(implicit config: Jac
       }
       
       override def onPush(): Unit = {
-        if (! promise.isCompleted) {
+        if (result.isEmpty) {
           try {
             parser.parseAsync(grab(bytesIn).asByteBuffers.iterator, ParsingMode.VALUE)(consumer)
           }
@@ -46,13 +50,14 @@ class JsonParserStage[J](val parsing: ParsingMiddleware[J])(implicit config: Jac
             case NonFatal(e) =>
               promise.failure(e)
               failStage(e)
+              return
           }
         }
+        else {
+          // don't grab, discard trailing garbage
+        }
         
-        if (isClosed(bytesIn))
-          completeStage()
-        else
-          pull(bytesIn)
+        pull(bytesIn)
       }
       
       override def onUpstreamFinish(): Unit = {
@@ -63,19 +68,26 @@ class JsonParserStage[J](val parsing: ParsingMiddleware[J])(implicit config: Jac
           case NonFatal(e) =>
             promise.failure(e)
             failStage(e)
+            return
         }
-          
-        if (promise.isCompleted)
-          completeStage()
-        else {
-          promise.failure(UnexpectedEndOfInputException)
-          failStage(UnexpectedEndOfInputException)
-        }
+        
+        complete()
       }
       
       override def onUpstreamFailure(e: Throwable): Unit = {
         super.onUpstreamFailure(e)
         promise.tryFailure(e)
+      }
+      
+      private def complete(): Unit = {
+        result match {
+          case None =>
+            failStage(UnexpectedEndOfInputException)
+            promise.tryFailure(UnexpectedEndOfInputException)
+          case Some(json) =>
+            completeStage()
+            promise.trySuccess(json)
+        }
       }
     }
     
