@@ -4,6 +4,7 @@ import java.util.function.Consumer
 
 import scala.concurrent.Await
 import scala.concurrent.duration._
+import scala.util.Failure
 
 import akka.NotUsed
 import akka.actor.ActorSystem
@@ -16,7 +17,7 @@ import com.fasterxml.jackson.core.JsonFactory
 import com.fasterxml.jackson.core.async.ByteArrayFeeder
 import spray.json._
 import zygf.jackshaft.conf.{JackshaftConfig, StreamingMode}
-import zygf.jackshaft.exceptions.PrintingException
+import zygf.jackshaft.exceptions.{PrintingException, UnexpectedEndOfInputException}
 import zygf.jackshaft.spray.{SprayParser, SprayPrinter}
 
 class SprayTests extends org.scalatest.funsuite.AnyFunSuite
@@ -144,6 +145,21 @@ class SprayTests extends org.scalatest.funsuite.AnyFunSuite
     val result = Await.result(Unmarshal(entity).to[JsValue], 1.seconds)
     
     assert(result == JsArray(Vector(JsNumber(1), JsTrue, JsFalse)))
+  }
+  
+  test("JsValue chunked empty") {
+    import akka.http.scaladsl.model.MediaTypes.`application/json`
+    import zygf.jackshaft.spray.AkkaSprayJsonSupport._
+    
+    val input = "".getBytes
+    // byte by byte
+    val entity = HttpEntity.Chunked(`application/json`, Source(input.toVector.map { byte => HttpEntity.Chunk(ByteString(byte)) } :+ HttpEntity.LastChunk))
+    Await.ready(Unmarshal(entity).to[JsValue], 1.seconds).value match {
+      case Some(Failure(UnexpectedEndOfInputException)) =>
+        succeed
+      case other =>
+        fail(other.toString)
+    }
   }
   
   test("printer") {
