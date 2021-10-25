@@ -18,11 +18,10 @@ scmInfo := Some(ScmInfo(url("https://github.com/zygfryd/scala-zygf-jackshaft"),
 val scala211 = "2.11.12"
 val scala212 = "2.12.15"
 val scala213 = "2.13.6"
-val scala30x = "3.0.2"
-val scala31x = "3.1.0"
-val supportedScalaVersions = List(scala212, scala213, scala211, scala30x, scala31x)
+val scala3xx = "3.1.0"
+val supportedScalaVersions = List(scala212, scala213, scala211, scala3xx)
 
-scalaVersion := scala30x
+scalaVersion := scala3xx
 crossScalaVersions := supportedScalaVersions
 
 libraryDependencies ++= Seq("com.fasterxml.jackson.core" % "jackson-core" % "2.10.5",
