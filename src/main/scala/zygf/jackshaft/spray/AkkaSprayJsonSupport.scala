@@ -24,12 +24,12 @@ abstract class AkkaSprayJsonSupport extends AkkaSupport(SprayParser, SprayPrinte
 //  implicit def sprayJsonUnmarshallerConverter[T](reader: JsonReader[T]): FromEntityUnmarshaller[T] =
 //    sprayJsonUnmarshaller(reader)
   
-  implicit def sprayJsValueUnmarshaller(implicit config: JackshaftConfig) = fromEntityUnmarshaller
+  implicit def sprayJsValueUnmarshaller(implicit config: JackshaftConfig): FromEntityUnmarshaller[JsValue] = fromEntityUnmarshaller
   
   implicit def sprayJsonUnmarshaller[T](implicit reader: JsonReader[T], config: JackshaftConfig): FromEntityUnmarshaller[T] =
     sprayJsValueUnmarshaller.map(reader.read)
   
-  implicit def sprayJsValueByteStringUnmarshaller(implicit config: JackshaftConfig) = fromByteStringUnmarshaller
+  implicit def sprayJsValueByteStringUnmarshaller(implicit config: JackshaftConfig): FromByteStringUnmarshaller[JsValue] = fromByteStringUnmarshaller
   
   implicit def sprayJsonByteStringUnmarshaller[T](implicit reader: JsonReader[T], config: JackshaftConfig): FromByteStringUnmarshaller[T] =
     sprayJsValueByteStringUnmarshaller.map(reader.read)
@@ -43,7 +43,7 @@ abstract class AkkaSprayJsonSupport extends AkkaSupport(SprayParser, SprayPrinte
       source.map(reader.read)
     }
   
-  implicit def sprayJsValueMarshaller(implicit config: JackshaftConfig) = toEntityMarshaller 
+  implicit def sprayJsValueMarshaller(implicit config: JackshaftConfig): ToEntityMarshaller[JsValue] = toEntityMarshaller 
   
   implicit def sprayJsonMarshaller[T](implicit writer: RootJsonWriter[T]): ToEntityMarshaller[T] =
     toEntityMarshaller compose writer.write

@@ -7,7 +7,7 @@ import scala.concurrent.duration._
 
 import akka.NotUsed
 import akka.actor.ActorSystem
-import akka.http.scaladsl.marshalling.Marshal
+import akka.http.scaladsl.marshalling.{Marshal, ToByteStringMarshaller}
 import akka.http.scaladsl.model.{HttpEntity, MessageEntity}
 import akka.http.scaladsl.unmarshalling.Unmarshal
 import akka.stream.scaladsl.Source
@@ -19,9 +19,9 @@ import zygf.jackshaft.conf.{JackshaftConfig, StreamingMode}
 import zygf.jackshaft.exceptions.PrintingException
 import zygf.jackshaft.spray.{SprayParser, SprayPrinter}
 
-class SprayTests extends org.scalatest.FunSuite
+class SprayTests extends org.scalatest.funsuite.AnyFunSuite
 {
-  implicit val sys = ActorSystem("SprayJsonSupportSpec")
+  implicit val sys: ActorSystem = ActorSystem("SprayJsonSupportSpec")
   import sys.dispatcher
   
   // 2.11
@@ -148,7 +148,7 @@ class SprayTests extends org.scalatest.FunSuite
     import zygf.jackshaft.spray.AkkaSprayJsonSupport
     object Support extends AkkaSprayJsonSupport
     {
-      implicit val bsMarshaller = toByteStringMarshaller 
+      implicit val bsMarshaller: ToByteStringMarshaller[JsValue] = toByteStringMarshaller 
     }
     import Support.bsMarshaller
     

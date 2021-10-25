@@ -10,16 +10,18 @@ import akka.http.scaladsl.model.MessageEntity
 import akka.http.scaladsl.unmarshalling.Unmarshal
 import akka.util.ByteString
 import org.scalatest._
+import org.scalatest.wordspec._
+import org.scalatest.matchers.should.Matchers
 import org.scalatest.concurrent.ScalaFutures
 
-class SprayJsonSupportSpec extends WordSpec with Matchers with ScalaFutures {
+class SprayJsonSupportSpec extends AnyWordSpec with Matchers with ScalaFutures {
   import SprayJsonSupportSpec._
   import spray.json.DefaultJsonProtocol._
   import spray.json._
   import zygf.jackshaft.spray.AkkaSprayJsonSupport._
   
-  implicit val exampleFormat = jsonFormat1(Example.apply)
-  implicit val sys = ActorSystem("SprayJsonSupportSpec")
+  implicit val exampleFormat: RootJsonFormat[Example] = jsonFormat1(Example.apply)
+  implicit val sys          : ActorSystem             = ActorSystem("SprayJsonSupportSpec")
   import sys.dispatcher
   
   val TestString = Seq.fill(100)("Contains all UTF-8 characters: 2-byte: £, 3-byte: ﾖ, 4-byte: 😁, 4-byte as a literal surrogate pair: \uD83D\uDE01").mkString("; ")
